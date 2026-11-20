@@ -5,6 +5,7 @@ final class SubtitleTracksUITests: SableUITestCase {
     func testSelectEmbeddedMKVSubtitleTracks() throws {
         launch(Launch.seeded)
         openLibraryItem(Fixture.mkvTitle)
+        pausePlayback()   // keep the 40 s clip from running out while the sheet is inspected
         openTrackSheet()
 
         let embedded = elements(withIdentifierPrefix: AX.Tracks.subtitle("emb:mkv:"))

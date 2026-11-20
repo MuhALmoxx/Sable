@@ -55,6 +55,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var isLoaded = false
     private var isShutDown = false
     private var didReachEnd = false
+    /// Restart of a finished input in progress (shared by concurrent seeks).
+    private var restartTask: Task<Void, Never>?
     private var initialAudioTrackID: String?
 
     private var audioSessionObservers: [NSObjectProtocol] = []
@@ -312,14 +314,22 @@ final class VLCEngine: NSObject, PlaybackEngine {
         guard !isShutDown, player.media != nil else { return }
         let target = max(0, seconds)
         let state = player.state
-        if didReachEnd || state == .ended || state == .stopped {
-            // VLC can't seek a finished input: restart it, then jump.
-            didReachEnd = false
-            player.play()
-            let deadline = CACurrentMediaTime() + 10
-            while !player.isPlaying && CACurrentMediaTime() < deadline {
-                try? await Task.sleep(nanoseconds: 50_000_000)
+        if restartTask != nil || didReachEnd || state == .ended || state == .stopped {
+            // VLC can't seek a finished input: restart it, then jump. Rapid seeks (several
+            // skip-back taps after the end) share one restart instead of racing each other.
+            if restartTask == nil {
+                didReachEnd = false
+                player.play()
+                restartTask = Task { @MainActor [weak self] in
+                    let deadline = CACurrentMediaTime() + 10
+                    while let self, !self.isShutDown, !self.player.isPlaying, CACurrentMediaTime() < deadline {
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                    }
+                }
             }
+            await restartTask?.value
+            restartTask = nil
+            guard !isShutDown else { return }
         }
         let fromRaw = rawTime()
         pendingSeek = (target, CACurrentMediaTime(), fromRaw)
