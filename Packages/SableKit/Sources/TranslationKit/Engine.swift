@@ -275,9 +275,23 @@ public actor TranslationEngine {
     /// context) up to `maxRepairRounds` times, then split what is still missing in half,
     /// recursively. A single cue that still fails throws `.mappingMismatch`.
     /// `extraKnown` holds translations finished earlier in the same chunk (context for splits).
+    /// On failure (or cancellation) the lines that did come back are written into the
+    /// checkpoint, so a resume does not pay for them again.
     private func translateChunk(_ units: [TranslationPlan.Item], context: JobContext, extraKnown: [String: String],
                                 isRepair: Bool, checkpoint: inout TranslationCheckpoint) async throws -> [String: String] {
         var result: [String: String] = [:]
+        do {
+            try await fillChunk(units, context: context, extraKnown: extraKnown, isRepair: isRepair,
+                                checkpoint: &checkpoint, result: &result)
+            return result
+        } catch {
+            for (id, text) in result where checkpoint.completed[id] == nil { checkpoint.completed[id] = text }
+            throw error
+        }
+    }
+
+    private func fillChunk(_ units: [TranslationPlan.Item], context: JobContext, extraKnown: [String: String],
+                           isRepair: Bool, checkpoint: inout TranslationCheckpoint, result: inout [String: String]) async throws {
         var pending = units
         var round = 0
         var unexpectedSeen: [String] = []
@@ -315,7 +329,7 @@ public actor TranslationEngine {
             round += 1
             if round > retryPolicy.maxRepairRounds { break }
         }
-        guard !pending.isEmpty else { return result }
+        guard !pending.isEmpty else { return }
         guard pending.count > 1 else {
             throw TranslationError.mappingMismatch(missing: pending.map(\.id), unexpected: Array(Set(unexpectedSeen)).sorted())
         }
@@ -326,7 +340,6 @@ public actor TranslationEngine {
             let sub = try await translateChunk(half, context: context, extraKnown: known, isRepair: true, checkpoint: &checkpoint)
             for (id, text) in sub { result[id] = text }
         }
-        return result
     }
 
     /// One provider request with retries for rate limits and transient failures.

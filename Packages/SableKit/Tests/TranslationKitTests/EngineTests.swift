@@ -115,9 +115,16 @@ final class EngineTests: XCTestCase {
             XCTAssertEqual(missing, ["6"])
         }
         let checkpoint = await e.checkpointProgress(for: spec)
-        XCTAssertEqual(checkpoint?.completedCues, 4, "first chunk is kept for resume")
+        XCTAssertEqual(checkpoint?.completedCues, 7, "first chunk and the other lines of the failing chunk are kept")
+        XCTAssertEqual(checkpoint?.completedChunks, 1)
         let cached = await e.cachedResult(for: spec)
         XCTAssertNil(cached)
+
+        // Resume only asks for the line that failed.
+        let fixed = FakeProvider()
+        let result = try await e.run(spec, provider: fixed, progress: { _ in })
+        XCTAssertEqual(fixed.requestedIDs, ["6"])
+        XCTAssertEqual(result.cues.map(\.text), (1...8).map { "سطر \($0)" })
     }
 
     func testGlossaryPropagatesToLaterChunks() async throws {
