@@ -54,7 +54,15 @@ final class GuidedSyncUITests: SableUITestCase {
 
         // Step 2: choose the line that was spoken (cue "2", 10.000 s in the late file).
         let next = element(AX.Sync.next)
-        if next.exists && next.isHittable { next.tap() }
+        if next.exists {
+            // The sheet scrolls Next into view after a mark; scroll ourselves if it is still hidden.
+            var scrolls = 0
+            while !next.isHittable && scrolls < 4 {
+                element(AX.Sync.flow).swipeUp()
+                scrolls += 1
+            }
+            if next.isHittable { next.tap() }
+        }
         let candidates = elements(withIdentifierPrefix: "sync.candidate.")
         XCTAssertTrue(waitUntil("candidate lines are offered", timeout: Timeout.screen) { candidates.count > 0 },
                       "No candidate cues around the marked time \(marked)")

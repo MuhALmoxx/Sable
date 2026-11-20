@@ -23,9 +23,11 @@ struct GuidedSyncView: View {
         let info = SyncTrackInfo(session: session)
         PixelSheet(title: "Sync subtitles", subtitle: info?.name, onClose: close) {
             if let info, info.cueCount > 0 {
+                ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         SyncStepHeader(step: model.step, pointNumber: model.pointNumber)
+                            .id(Self.topAnchor)
                         if let notice = model.notice {
                             SyncNotice(text: notice)
                         }
@@ -41,6 +43,16 @@ struct GuidedSyncView: View {
                     .padding(Spacing.md)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // At the compact detent the step's primary action can sit below the fold:
+                // bring "Next" into view as soon as a mark exists, and start each step at the top.
+                .onChange(of: model.markedTime) { _, mark in
+                    guard mark != nil else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.nextAnchor, anchor: .bottom) }
+                }
+                .onChange(of: model.step) { _, _ in
+                    proxy.scrollTo(Self.topAnchor, anchor: .top)
+                }
+                }
             } else {
                 ScrollView {
                     SyncNoTrackView(session: session, purpose: "sync it",
@@ -65,6 +77,9 @@ struct GuidedSyncView: View {
         model.end()
         onClose()
     }
+
+    static let topAnchor = "sync.scroll.top"
+    static let nextAnchor = "sync.scroll.next"
 }
 
 // MARK: - Header and notices
@@ -201,6 +216,7 @@ private struct SyncMarkStep: View {
         .syncDisabled(!hasMark)
         .accessibilityLabel("Next: choose which line was spoken")
         .accessibilityIdentifier(AX.Sync.next)
+        .id(GuidedSyncView.nextAnchor)
     }
 }
 

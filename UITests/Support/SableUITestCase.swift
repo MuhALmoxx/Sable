@@ -223,6 +223,20 @@ class SableUITestCase: XCTestCase {
         if !Self.labelMeansPlaying(button.label) { button.tap() }
     }
 
+    /// Seeks back to the first seconds of the video with the skip-back control (10 s steps) and
+    /// resumes playback, so a cue near the start is about to be shown. The fixture is only 40 s
+    /// long, so tests that switch tracks late would otherwise run past every cue.
+    func restartPlaybackFromBeginning(below seconds: TimeInterval = 2.5) {
+        for _ in 0..<6 {
+            guard let now = currentPlaybackTime(), now > seconds else { break }
+            let back = playerControl(AX.Player.skipBack)
+            guard isVisible(back) else { break }
+            back.tap()
+            _ = waitUntil("the playhead moves back", timeout: 3) { (self.currentPlaybackTime() ?? 0) < now }
+        }
+        resumePlayback()
+    }
+
     /// A play/pause button labelled "Pause" means playback is running.
     static func labelMeansPlaying(_ label: String) -> Bool {
         label.range(of: "pause", options: .caseInsensitive) != nil

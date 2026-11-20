@@ -17,11 +17,15 @@ final class SubtitleTracksUITests: SableUITestCase {
 
         // French first (not the default), then back to English: proves the selection is applied.
         selectSubtitleTrack(id: Fixture.mkvFrenchSRT)
+        closeSheetIfPresent(AX.Tracks.sheet)
+        restartPlaybackFromBeginning()   // the French track only has cues at 3 s and 7.5 s
         waitForSubtitleText(description: "French dialogue is shown") { text in
             Fixture.frenchFragments.contains { text.localizedCaseInsensitiveContains($0) } && !self.containsEnglishDialogue(text)
         }
 
         selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
+        closeSheetIfPresent(AX.Tracks.sheet)
+        restartPlaybackFromBeginning()
         waitForSubtitleText(description: "English dialogue is shown") { self.containsEnglishDialogue($0) }
 
         openTrackSheet()

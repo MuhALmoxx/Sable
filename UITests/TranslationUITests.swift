@@ -4,7 +4,8 @@ import XCTest
 /// full run to 100 %, cancel + resume from the checkpoint, SRT export.
 final class TranslationUITests: SableUITestCase {
     func testTranslateWholeEnglishTrackToArabicWithMockProvider() throws {
-        launch(Launch.seededWithMockTranslation)
+        // 3 chunks x 2 s: long enough for the test to observe progress before 100 %.
+        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "2.0"])
         openLibraryItem(Fixture.mkvTitle)
         selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
         openTranslationSheet()
@@ -27,7 +28,7 @@ final class TranslationUITests: SableUITestCase {
 
     func testCancelMidwayThenResumeContinuesFromCheckpoint() throws {
         // Slow the mock down so there is time to cancel between chunks.
-        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "1.5"])
+        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "4.0"])
         openLibraryItem(Fixture.mkvTitle)
         selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
         openTranslationSheet()
@@ -112,13 +113,14 @@ final class TranslationUITests: SableUITestCase {
     }
 
     /// Fraction 0...1 from the progress label, or the progress bar's accessibility value.
+    /// Reads through `snapshot()` (which throws instead of failing the test) because the progress
+    /// views disappear the moment the job completes, between an `exists` check and a label read.
     private func translationFraction() -> Double? {
-        let label = element(AX.Translation.progressLabel)
-        if label.exists, let fraction = Self.progressFraction(from: label.label) { return fraction }
-        let bar = element(AX.Translation.progress)
-        if bar.exists {
-            if let value = bar.value as? String, let fraction = Self.progressFraction(from: value) { return fraction }
-            if let fraction = Self.progressFraction(from: bar.label) { return fraction }
+        if let snap = try? element(AX.Translation.progressLabel).snapshot(),
+           let fraction = Self.progressFraction(from: snap.label) { return fraction }
+        if let snap = try? element(AX.Translation.progress).snapshot() {
+            if let value = snap.value as? String, let fraction = Self.progressFraction(from: value) { return fraction }
+            if let fraction = Self.progressFraction(from: snap.label) { return fraction }
         }
         return nil
     }
