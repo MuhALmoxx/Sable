@@ -129,6 +129,8 @@ struct RepeatingButton<Label: View>: View {
         .buttonStyle(HoldAwareButtonStyle(kind: kind, compact: compact) { pressed in
             repeater.pressChanged(pressed, fire: action)
         })
+        // A button removed mid-hold never sees isPressed go false: stop repeating explicitly.
+        .onDisappear { repeater.pressChanged(false, fire: action) }
         .accessibilityHint("Hold to repeat.")
     }
 }

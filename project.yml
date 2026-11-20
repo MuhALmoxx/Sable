@@ -65,7 +65,7 @@ targets:
         UIBackgroundModes:
           - audio
         UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: false
+        LSSupportsOpeningDocumentsInPlace: true
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: org.matroska.mkv
             UTTypeDescription: Matroska video

@@ -70,6 +70,21 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(progress.items.last?.repairRequests, 1)
     }
 
+    func testLoneLineLeftInLatinScriptIsKeptInsteadOfFailingTheJob() async throws {
+        let doc = makeDocument(["Hello there.", "iPhone Pro Max", "Goodbye."])
+        let provider = FakeProvider { _, request in
+            var r = FakeProvider.arabic(for: request)
+            if let unit = request.units.first(where: { $0.text == "iPhone Pro Max" }) {
+                r.translations[unit.id] = "iPhone Pro Max"   // the provider keeps the brand name as is
+            }
+            return r
+        }
+        let result = try await engine().run(makeSpec(doc), provider: provider, progress: { _ in })
+        XCTAssertEqual(result.cues.count, 3)
+        XCTAssertEqual(result.cues[1].text, "iPhone Pro Max")
+        XCTAssertNotEqual(result.cues[0].text, "Hello there.")
+    }
+
     func testUnexpectedIDsAreIgnoredAndReported() async throws {
         let provider = FakeProvider { _, request in
             var r = FakeProvider.arabic(for: request)

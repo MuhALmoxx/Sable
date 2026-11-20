@@ -165,6 +165,10 @@ public struct ChunkValidation: Sendable, Equatable {
     public var missing: [String]
     /// Ids in the response that were not requested (ignored).
     public var unexpected: [String]
+    /// id -> non-empty text that was rejected only because a wordy Latin line came back without
+    /// any target-script letters (e.g. a brand name or a line the model chose not to translate).
+    /// Accepted as a last resort once repair rounds are exhausted, so one such line cannot fail a job.
+    public var scriptRejected: [String: String] = [:]
 }
 
 public enum ChunkValidator {
@@ -176,6 +180,7 @@ public enum ChunkValidator {
         let requested = Set(units.map(\.id))
         var accepted: [String: String] = [:]
         var missing: [String] = []
+        var scriptRejected: [String: String] = [:]
         for unit in units {
             guard let raw = response.translations[unit.id] else { missing.append(unit.id); continue }
             let processed = TranslationPostProcessor.process(raw, source: unit.text, target: target)
@@ -183,11 +188,13 @@ public enum ChunkValidator {
                 missing.append(unit.id); continue
             }
             if target.code.primary == "ar", TextCleanup.latinWordCount(unit.text) >= 2, !TextCleanup.containsArabicLetter(processed) {
-                missing.append(unit.id); continue
+                missing.append(unit.id)
+                scriptRejected[unit.id] = processed
+                continue
             }
             accepted[unit.id] = processed
         }
         let unexpected = response.translations.keys.filter { !requested.contains($0) }.sorted()
-        return ChunkValidation(accepted: accepted, missing: missing, unexpected: unexpected)
+        return ChunkValidation(accepted: accepted, missing: missing, unexpected: unexpected, scriptRejected: scriptRejected)
     }
 }

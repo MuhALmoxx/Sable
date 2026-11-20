@@ -128,6 +128,7 @@ final class PlayerSession {
     @ObservationIgnored private var subtitleChoice: String?
     @ObservationIgnored private var perVideoStyle: SubtitleStyle?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
+    @ObservationIgnored private var pipSaveTask: Task<Void, Never>?
     @ObservationIgnored private var isStarting = false
     @ObservationIgnored private var isTornDown = false
 
@@ -279,6 +280,8 @@ final class PlayerSession {
         engineKind = nil
         isPictureInPictureSupported = false
         isPictureInPictureActive = false
+        pipSaveTask?.cancel()
+        pipSaveTask = nil
         displayLink?.isPaused = true
     }
 
@@ -339,6 +342,26 @@ final class PlayerSession {
             }
         case let .pictureInPictureChanged(active):
             isPictureInPictureActive = active
+            updatePictureInPictureSaving()
+        }
+    }
+
+    /// CADisplayLink (and with it the periodic save in `tick`) doesn't fire while Sable is in the
+    /// background, where AVFoundation keeps playing in Picture in Picture; save on a timer then,
+    /// so a long PiP session isn't lost if the app is terminated before playback pauses.
+    private func updatePictureInPictureSaving() {
+        pipSaveTask?.cancel()
+        pipSaveTask = nil
+        guard isPictureInPictureActive, !isTornDown else { return }
+        pipSaveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                if self.isPlaying, CACurrentMediaTime() - self.lastPersist > 4 {
+                    self.refreshTime()
+                    self.persist(bumpRevision: false)
+                }
+            }
         }
     }
 
@@ -497,8 +520,11 @@ final class PlayerSession {
         guard let active = activeSubtitle else { return }
         if !subtitleTracks.contains(where: { $0.id == active.descriptor.id }) {
             deactivateSubtitles()
-        } else if case .translated = active.descriptor.origin {
+        } else if case .translated = active.descriptor.origin, loadingSubtitleTrackID == nil {
             // A translation may have been regenerated under the same id: reload its document.
+            // Not while another track is loading: every persistNow (pause, rate, import…) bumps
+            // libraryRevision and lands here, and re-activating would supersede the user's
+            // in-flight selection (its result is then dropped by the generation check).
             await activateSubtitle(active.descriptor.id)
         }
     }

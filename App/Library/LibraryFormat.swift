@@ -7,7 +7,8 @@ import LibraryKit
 enum LibraryFormat {
     /// "1:02:03" / "12:31" / "0:07".
     static func clock(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        // Upper bound guards Int conversion against corrupt container durations.
+        guard seconds.isFinite, seconds >= 0, seconds < 1e12 else { return "0:00" }
         let total = Int(seconds.rounded(.down))
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }

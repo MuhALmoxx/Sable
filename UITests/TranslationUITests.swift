@@ -68,6 +68,7 @@ final class TranslationUITests: SableUITestCase {
         XCTAssertFalse(samples.contains { $0 + 0.0001 < stopped }, "Progress dropped below the checkpoint: \(samples)")
 
         showArabicTrack()
+        restartPlaybackFromBeginning()   // the long cancel/resume run usually reaches the end of the 40 s clip
         waitForSubtitleText(timeout: 30, description: "Arabic subtitle text is shown after resume") { self.containsArabic($0) }
     }
 

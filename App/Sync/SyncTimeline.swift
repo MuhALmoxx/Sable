@@ -13,6 +13,9 @@ struct SyncTimeline: View {
 
     @State private var dragStartTime: TimeInterval?
     @State private var lastTick: Int?
+    /// True while a finger is down. Unlike `onEnded`, this also resets when the system cancels
+    /// the drag (sheet/scroll takes over, app backgrounded), so a scrub is always finished.
+    @GestureState private var isTouching = false
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 104
 
     var body: some View {
@@ -30,6 +33,9 @@ struct SyncTimeline: View {
             }
             .contentShape(Rectangle())
             .gesture(scrubGesture(width: geo.size.width))
+        }
+        .onChange(of: isTouching) { _, touching in
+            if !touching { finishDrag() }
         }
         .frame(height: height)
         .background(Palette.surface)
@@ -66,6 +72,7 @@ struct SyncTimeline: View {
 
     private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 4)
+            .updating($isTouching) { _, touching, _ in touching = true }
             .onChanged { value in
                 if dragStartTime == nil {
                     // Ignore mostly-vertical drags so the sheet can still scroll.
@@ -84,11 +91,14 @@ struct SyncTimeline: View {
                 }
                 lastTick = tick
             }
-            .onEnded { _ in
-                if dragStartTime != nil { model.endScrub() }
-                dragStartTime = nil
-                lastTick = nil
-            }
+            .onEnded { _ in finishDrag() }
+    }
+
+    /// Ends the scrub once per gesture, whether it ended normally or was cancelled.
+    private func finishDrag() {
+        if dragStartTime != nil { model.endScrub() }
+        dragStartTime = nil
+        lastTick = nil
     }
 }
 

@@ -47,6 +47,15 @@ enum TextDecoding {
 
         if isValidUTF8(bytes) { return String(decoding: bytes, as: UTF8.self) }
 
+        // UTF-8 with a few bad bytes (a stray Windows-1252 byte in a credit line, a file cut in
+        // the middle of a character): keep it UTF-8, bad bytes becoming U+FFFD, instead of turning
+        // every Arabic line of the file into Windows-1252 mojibake.
+        if isMostlyUTF8(bytes) {
+            let text = String(decoding: bytes, as: UTF8.self)
+            if looksBinary(text) { throw SubtitleError.unreadableEncoding }
+            return text
+        }
+
         let text = decode(bytes, legacy: detectLegacyEncoding(bytes))
         if looksBinary(text) { throw SubtitleError.unreadableEncoding }
         return text
@@ -65,6 +74,22 @@ enum TextDecoding {
             case .scalarValue: continue
             case .emptyInput: return true
             case .error: return false
+            }
+        }
+    }
+
+    /// True when invalid sequences are rare next to valid multi-byte UTF-8 ones (at most one per
+    /// ten). Single-byte code pages produce the opposite: Windows-1256 Arabic or Persian and
+    /// Windows-1252 Western text yield far more invalid sequences than valid multi-byte ones.
+    static func isMostlyUTF8(_ bytes: [UInt8]) -> Bool {
+        var iterator = bytes.makeIterator()
+        var decoder = UTF8()
+        var multibyte = 0, errors = 0
+        while true {
+            switch decoder.decode(&iterator) {
+            case let .scalarValue(scalar): if scalar.value >= 0x80 { multibyte += 1 }
+            case .emptyInput: return errors > 0 && multibyte >= errors * 10
+            case .error: errors += 1
             }
         }
     }
@@ -135,7 +160,7 @@ enum TextDecoding {
         return String(scalars)
     }
 
-    /// Windows-1256 wins when the high bytes mostly (>= 2/3) decode to Arabic letters that sit
+    /// Windows-1256 wins when the high bytes mostly (>= 2/3) decode to Arabic letters or harakat that sit
     /// next to other Arabic letters, spaces or punctuation — not glued to Latin letters, which is
     /// what accented Western text (ä, ß, á…) looks like when misread as 1256.
     static func looksLikeWindows1256Arabic(_ bytes: [UInt8]) -> Bool {
@@ -150,16 +175,24 @@ enum TextDecoding {
             let v = windows1256[Int(b) - 0x80]
             return (0x0621...0x064A).contains(v) || (0x0671...0x06D3).contains(v)
         }
-        var high = 0, arabic = 0, glued = 0
+        /// Harakat (fatha, damma, kasra, shadda, sukun, tanween): fully vocalised text has about
+        /// one per letter, so they count as Arabic too (and, like letters, must not touch Latin).
+        func isArabicMark(_ b: UInt8) -> Bool {
+            guard b >= 0x80 else { return false }
+            return (0x064B...0x0652).contains(windows1256[Int(b) - 0x80])
+        }
+        var high = 0, letters = 0, arabic = 0, glued = 0
         for i in bytes.indices where bytes[i] >= 0x80 {
             high += 1
-            guard isArabicLetter(bytes[i]) else { continue }
+            let isLetter = isArabicLetter(bytes[i])
+            guard isLetter || isArabicMark(bytes[i]) else { continue }
+            if isLetter { letters += 1 }
             arabic += 1
             let before = i > bytes.startIndex && isLatinLetter(bytes[i - 1])
             let after = i + 1 < bytes.endIndex && isLatinLetter(bytes[i + 1])
             if before || after { glued += 1 }
         }
-        return arabic >= 1 && glued * 10 <= arabic && arabic * 3 >= high * 2
+        return letters >= 1 && glued * 10 <= arabic && arabic * 3 >= high * 2
     }
 
     /// True when more than 5% of the text is C0 control characters (other than tab, newlines and

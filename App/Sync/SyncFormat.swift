@@ -146,7 +146,7 @@ enum OffsetEntry {
     }
 
     static func evaluate(_ text: String) -> Result {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = westernDigits(text).trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "-" || trimmed == "+" || trimmed == SyncFormat.minus { return .empty }
         guard let raw = OffsetInput.parse(trimmed) ?? parse(trimmed), raw.isFinite else {
             return .invalid("Enter seconds like 1.5, -75.5 or +1:02.5 (minutes:seconds).")
@@ -221,6 +221,22 @@ enum OffsetEntry {
         guard dots <= 1 else { return nil }
         let normalized = s.hasPrefix(".") ? "0" + s : (s.hasSuffix(".") ? s + "0" : s)
         return Double(normalized)
+    }
+
+    /// The iOS decimal pad types Arabic-Indic (U+0660…U+0669) or Persian (U+06F0…U+06F9) digits
+    /// and the Arabic decimal separator U+066B in Arabic/Persian locales; both parsers read ASCII
+    /// only, so map those to "0"…"9" and ".".
+    static func westernDigits(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0660...0x0669: scalars.append(Unicode.Scalar(UInt8(scalar.value - 0x0660) + 0x30))
+            case 0x06F0...0x06F9: scalars.append(Unicode.Scalar(UInt8(scalar.value - 0x06F0) + 0x30))
+            case 0x066B: scalars.append(".")
+            default: scalars.append(scalar)
+            }
+        }
+        return String(scalars)
     }
 
     /// Flips the sign of the typed text ("1.5" ⇄ "-1.5"); used by the ± key next to the field

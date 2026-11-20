@@ -1,5 +1,6 @@
 import UIKit
 import QuartzCore
+import AVFoundation
 import MobileVLCKit
 import SubtitleKit
 import LibraryKit
@@ -56,8 +57,12 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var didReachEnd = false
     private var initialAudioTrackID: String?
 
+    private var audioSessionObservers: [NSObjectProtocol] = []
+
     // Smooth clock: VLC reports time a few times per second; interpolate between reports.
-    private var pendingSeek: (target: TimeInterval, issuedAt: CFTimeInterval)?
+    // `fromRaw` is VLC's reported time when the seek was issued: the seek counts as applied only
+    // once VLC reports a different time (it reports nothing at all while paused).
+    private var pendingSeek: (target: TimeInterval, issuedAt: CFTimeInterval, fromRaw: TimeInterval)?
     private var clockAnchor: (media: TimeInterval, host: CFTimeInterval)?
     private var lastReturnedTime: TimeInterval = 0
 
@@ -74,6 +79,31 @@ final class VLCEngine: NSObject, PlaybackEngine {
         player.delegate = self
         player.drawable = surface
         surface.onLayout = { [weak self] in self?.surfaceDidLayout() }
+        observeAudioSession()
+    }
+
+    /// AVPlayer pauses by itself when headphones/AirPods disconnect or a call/Siri interrupts the
+    /// audio session; VLCKit doesn't (VLC's own app does it at app level). Without this, VLC keeps
+    /// playing out loud through the speaker, or silently through a phone call.
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        audioSessionObservers = [
+            center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
+                guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                      reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+                Task { @MainActor [weak self] in self?.pauseForAudioSession() }
+            },
+            center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+                guard let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      type == AVAudioSession.InterruptionType.began.rawValue else { return }
+                Task { @MainActor [weak self] in self?.pauseForAudioSession() }
+            },
+        ]
+    }
+
+    private func pauseForAudioSession() {
+        guard !isShutDown, player.isPlaying else { return }
+        player.pause()
     }
 
     // MARK: Loading
@@ -291,12 +321,16 @@ final class VLCEngine: NSObject, PlaybackEngine {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
         }
-        pendingSeek = (target, CACurrentMediaTime())
+        let fromRaw = rawTime()
+        pendingSeek = (target, CACurrentMediaTime(), fromRaw)
         clockAnchor = nil
         player.time = VLCTime(number: NSNumber(value: Int64((target * 1000).rounded())))
-        // Give VLC a moment to apply the jump so time reads are consistent afterwards.
+        // Give VLC a moment to apply the jump so time reads are consistent afterwards. While
+        // paused VLC publishes no time, so there is nothing to wait for (currentTime keeps the target).
+        guard player.isPlaying else { return }
         for _ in 0..<20 {
-            if abs(rawTime() - target) < 0.75 { break }
+            let raw = rawTime()
+            if raw != fromRaw && abs(raw - target) < 0.75 { break }
             try? await Task.sleep(nanoseconds: 25_000_000)
         }
     }
@@ -304,7 +338,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func scrub(to seconds: TimeInterval) {
         guard !isShutDown, player.media != nil, !didReachEnd else { return }
         let target = max(0, seconds)
-        pendingSeek = (target, CACurrentMediaTime())
+        pendingSeek = (target, CACurrentMediaTime(), rawTime())
         clockAnchor = nil
         player.time = VLCTime(number: NSNumber(value: Int64((target * 1000).rounded())))
     }
@@ -313,7 +347,11 @@ final class VLCEngine: NSObject, PlaybackEngine {
         let now = CACurrentMediaTime()
         let raw = rawTime()
         if let pending = pendingSeek {
-            if abs(raw - pending.target) < 0.75 || now - pending.issuedAt > 1.5 {
+            // Applied once VLC reports a new time near the target. Comparing against the pre-seek
+            // time alone would accept a short seek (< 0.75 s) before VLC even ran it, snapping the
+            // clock back. Paused, VLC reports nothing, so the target stands until playback resumes.
+            let reported = raw != pending.fromRaw
+            if reported && (abs(raw - pending.target) < 0.75 || (player.isPlaying && now - pending.issuedAt > 1.5)) {
                 pendingSeek = nil
                 clockAnchor = nil
             } else {
@@ -411,6 +449,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
         guard !isShutDown else { return }
         isShutDown = true
         onEvent = nil
+        audioSessionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        audioSessionObservers = []
         surface.onLayout = nil
         player.delegate = nil
         player.stop()

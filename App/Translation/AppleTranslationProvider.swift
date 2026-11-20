@@ -36,7 +36,11 @@ enum AppleTranslationAvailability: Equatable {
 @MainActor
 final class AppleTranslationBroker {
     /// Read by the host modifier; setting/invalidating it (re)starts the session.
-    var configuration: TranslationSession.Configuration? = nil
+    var configuration: TranslationSession.Configuration? = nil {
+        didSet { configurationGeneration &+= 1 }
+    }
+    /// Bumped on every (re)configuration so a finished session only clears its own configuration.
+    @ObservationIgnored private var configurationGeneration = 0
     private(set) var isServing = false
     /// True while iOS prepares the languages (it may show a download prompt).
     private(set) var isPreparing = false
@@ -74,6 +78,7 @@ final class AppleTranslationBroker {
             configuration = TranslationSession.Configuration(source: sourceLanguage, target: targetLanguage)
         } else if !isServing {
             configuration?.invalidate()
+            configurationGeneration &+= 1
         }
         let requests = parts.map { TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id) }
         let batchID = UUID()
@@ -122,11 +127,15 @@ final class AppleTranslationBroker {
     /// Runs inside `.translationTask` for as long as the host view is visible.
     func serve(_ session: TranslationSession) async {
         isServing = true
+        let servedGeneration = configurationGeneration
         defer {
             isServing = false
             isPreparing = false
             failAll(TranslationKit.TranslationError.providerUnavailable(
                 "On-device translation stopped because the Translate sheet was closed. Open it and tap Resume."))
+            // Without this, `.translationTask` would start a new session (and iOS could show the
+            // language-download prompt) every time the sheet reappears, even with no job queued.
+            if configurationGeneration == servedGeneration { configuration = nil }
         }
         isPreparing = true
         do {

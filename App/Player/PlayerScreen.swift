@@ -103,6 +103,12 @@ struct PlayerContentView: View {
                 .preferredColorScheme(.dark)
         }
         .onChange(of: session.isPlaying) { _, playing in
+            // VLC has no PiP: if it finished opening after the app went to the background, don't
+            // let it play audio invisibly.
+            if playing, scenePhase == .background, session.engineKind == .vlc {
+                session.pause()
+                return
+            }
             UIApplication.shared.isIdleTimerDisabled = playing
             if playing { scheduleHide() } else { revealControls(autoHide: false) }
         }
@@ -210,7 +216,9 @@ struct PlayerContentView: View {
             .accessibilityElement()
             .accessibilityLabel("Video")
             .accessibilityHint(controlsVisible ? "Double-tap to hide the controls" : "Double-tap to show the controls")
-            .accessibilityAddTraits(.allowsDirectInteraction)
+            // No .allowsDirectInteraction: it would hand VoiceOver's own touches to the gestures
+            // above, so a flick to the next control scrubs the video and the double-tap in the
+            // hint seeks or toggles play instead of running this action.
             .accessibilityAction { toggleControls() }
             .accessibilityIdentifier(AX.Player.surface)
     }

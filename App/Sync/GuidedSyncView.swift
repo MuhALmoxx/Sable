@@ -45,8 +45,10 @@ struct GuidedSyncView: View {
                 .scrollDismissesKeyboard(.interactively)
                 // At the compact detent the step's primary action can sit below the fold:
                 // bring "Next" into view as soon as a mark exists, and start each step at the top.
-                .onChange(of: model.markedTime) { _, mark in
-                    guard mark != nil else { return }
+                .onChange(of: model.markedTime) { old, mark in
+                    // Only when a mark first appears: nudges, holds and "Use" also change the mark,
+                    // and jumping the sheet then hides the timeline and moves the held button away.
+                    guard old == nil, mark != nil else { return }
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.nextAnchor, anchor: .bottom) }
                 }
                 .onChange(of: model.step) { _, _ in

@@ -199,7 +199,9 @@ final class SubtitleRepository {
     /// Concurrent requests for the same file share one extraction.
     private func extractMatroska(item: MediaItem, requested: Int, progress: ((Double) -> Void)?) async throws -> SubtitleDocument {
         let job: ExtractionJob
-        if let running = matroskaJobs[item.id], running.trackNumbers.contains(requested) {
+        // A job whose waiters all gave up is cancelled but stays registered until they return;
+        // joining it would fail this request with a spurious cancellation, so start afresh.
+        if let running = matroskaJobs[item.id], running.trackNumbers.contains(requested), running.task?.isCancelled == false {
             job = running
         } else {
             var numbers: Set<Int> = [requested]

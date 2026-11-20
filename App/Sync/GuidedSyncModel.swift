@@ -239,6 +239,8 @@ final class GuidedSyncModel {
         let newTrackID = track?.descriptor.id
         let newGroupID = track?.descriptor.timingGroupID
         guard newTrackID != trackID || newGroupID != groupID else { return }
+        // No text track before (sheet opened while the track was still loading): nothing to restart.
+        let hadTrack = groupID != nil
         originalTextByID = session.originalTextByCueID()
         if newGroupID == groupID {
             // Same timing group (e.g. English <-> its Arabic translation): same cue ids and
@@ -249,7 +251,7 @@ final class GuidedSyncModel {
         analysisTask?.cancel()
         resetFlow(keepMark: false)
         captureContext()
-        if newGroupID != nil {
+        if hadTrack && newGroupID != nil {
             notice = "The subtitle track changed, so sync started over for the new track."
         }
     }

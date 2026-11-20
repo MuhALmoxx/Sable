@@ -295,6 +295,7 @@ public actor TranslationEngine {
         var pending = units
         var round = 0
         var unexpectedSeen: [String] = []
+        var scriptRejected: [String: String] = [:]
         while !pending.isEmpty {
             try Task.checkCancellation()
             var known = checkpoint.completed
@@ -321,7 +322,8 @@ public actor TranslationEngine {
                 checkpoint.ignoredUnexpectedIDs += validation.unexpected.count
                 unexpectedSeen.append(contentsOf: validation.unexpected)
             }
-            for (id, text) in validation.accepted { result[id] = text }
+            for (id, text) in validation.accepted { result[id] = text; scriptRejected[id] = nil }
+            for (id, text) in validation.scriptRejected { scriptRejected[id] = text }
             if !response.glossary.isEmpty { checkpoint.glossary.merge(response.glossary) }
             let missing = Set(validation.missing)
             pending = pending.filter { missing.contains($0.id) }
@@ -331,6 +333,12 @@ public actor TranslationEngine {
         }
         guard !pending.isEmpty else { return }
         guard pending.count > 1 else {
+            // A lone line that keeps coming back in Latin script (brand names, acronyms, a line the
+            // provider deliberately leaves as is) is kept rather than failing the whole track.
+            if let id = pending.first?.id, let text = scriptRejected[id] {
+                result[id] = text
+                return
+            }
             throw TranslationError.mappingMismatch(missing: pending.map(\.id), unexpected: Array(Set(unexpectedSeen)).sorted())
         }
         let mid = pending.count / 2

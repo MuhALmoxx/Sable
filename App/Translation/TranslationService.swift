@@ -241,13 +241,16 @@ final class TranslationService {
         jobs[key] = state
 
         let engine = self.engine
+        // App-lifetime container, kept strongly: the player that started the job may close (and
+        // another player may open this video) before the job finishes.
+        let services = session.services
         let onProgress: @Sendable (TranslationProgress) -> Void = { [weak self] progress in
             Task { @MainActor in self?.updateProgress(key, progress) }
         }
         tasks[key] = Task { [weak self, weak session] in
             do {
                 let result = try await engine.run(spec, provider: provider, progress: onProgress)
-                await self?.finish(key, spec: spec, result: result, session: session)
+                await self?.finish(key, spec: spec, result: result, session: session, services: services)
             } catch is CancellationError {
                 self?.markPaused(key)
             } catch {
@@ -271,7 +274,12 @@ final class TranslationService {
     }
 
     func discard(_ spec: TranslationJobSpec, key: TranslationJobKey) async {
-        tasks[key]?.cancel()
+        if let task = tasks[key] {
+            task.cancel()
+            // The engine saves a checkpoint while unwinding a cancelled job; wait for that first
+            // so the deletion below is not undone.
+            await task.value
+        }
         await engine.discardCheckpoint(for: spec)
         jobs[key] = nil
     }
@@ -295,7 +303,7 @@ final class TranslationService {
             return
         }
         jobs[key] = TranslationJobState(phase: .running, providerID: spec.providerID, modelID: spec.modelID)
-        await finish(key, spec: spec, result: cached, session: session)
+        await finish(key, spec: spec, result: cached, session: session, services: session.services)
     }
 
     /// The finished document for a job in this app session, if any.
@@ -308,7 +316,8 @@ final class TranslationService {
         jobs[key] = state
     }
 
-    private func finish(_ key: TranslationJobKey, spec: TranslationJobSpec, result: SubtitleDocument, session: PlayerSession?) async {
+    private func finish(_ key: TranslationJobKey, spec: TranslationJobSpec, result: SubtitleDocument,
+                        session: PlayerSession?, services: AppServices) async {
         results[key] = result
         do {
             let ref = try library.saveTranslation(result, sourceTrackID: key.sourceTrackID, providerID: spec.providerID,
@@ -325,10 +334,10 @@ final class TranslationService {
                                                      requestsSent: state.progress?.requestsSent ?? 0)
             }
             jobs[key] = state
-            if let session {
-                session.services.libraryDidChange()
-                await session.reloadSubtitleTracks()
-            }
+            // Always signal the library change: a player reopened on this video while the job ran
+            // has a new session that only learns about the Arabic track from this revision bump.
+            services.libraryDidChange()
+            if let session { await session.reloadSubtitleTracks() }
         } catch {
             jobs[key] = TranslationJobState(phase: .failed("The translation finished but could not be saved: \(error.localizedDescription)"),
                                             providerID: spec.providerID, modelID: spec.modelID, progress: jobs[key]?.progress)
