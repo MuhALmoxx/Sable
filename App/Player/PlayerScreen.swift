@@ -56,7 +56,7 @@ struct PlayerScreen: View {
 }
 
 enum PlayerSheet: String, Identifiable {
-    case tracks, audio, speed, aspect, translate, timing, sync
+    case tracks, audio, speed, aspect, translate, timing, sync, info
     var id: String { rawValue }
 }
 
@@ -106,6 +106,9 @@ struct PlayerContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { session.persistNow() }
+            // VLCKit has no Picture in Picture: don't keep playing invisibly in the background.
+            // (AVFoundation continues in PiP or pauses itself.)
+            if phase == .background, session.engineKind == .vlc, session.isPlaying { session.pause() }
         }
         .onAppear { scheduleHide() }
     }
@@ -140,7 +143,7 @@ struct PlayerContentView: View {
     }
 
     private func videoLayers(size: CGSize, landscape: Bool) -> some View {
-        let reserved: CGFloat = controlsVisible && !isLocked ? (landscape ? 150 : 56) : 0
+        let reserved: CGFloat = controlsVisible && !isLocked ? (landscape ? 132 : 56) : 0
         return ZStack {
             Color.black
             EngineSurface(engineView: session.engineView)
@@ -531,6 +534,9 @@ struct PlayerContentView: View {
             GuidedSyncView(session: session, onClose: { activeSheet = nil })
                 .presentationDetents([.fraction(0.62), .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.62)))
+        case .info:
+            PlaybackInfoSheet(session: session, onClose: { activeSheet = nil })
+                .presentationDetents([.medium])
         }
     }
 

@@ -109,6 +109,10 @@ final class PlayerSession {
     private(set) var hasPerVideoStyle = false
     /// The last engine Sable tried (for the failure screen's "Try VLC engine").
     private(set) var lastAttemptedEngine: PlaybackEngineKind?
+    /// AVFoundation reported the file as playable (so "Reopen with AVFoundation" makes sense).
+    private(set) var isPlayableByAVFoundation = false
+    /// Container found by the probe.
+    private(set) var container: ContainerKind?
 
     @ObservationIgnored private var engine: PlaybackEngine?
     @ObservationIgnored private var displayLink: DisplayLinkDriver?
@@ -163,6 +167,8 @@ final class PlayerSession {
         if let size = probe.videoSize, size.width > 0, size.height > 0 { videoSize = size }
         if let probed = probe.duration, probed > 0 { duration = probed }
         unsupportedSubtitleTracks = probe.unsupportedSubtitleTracks
+        isPlayableByAVFoundation = probe.preferredEngine == .avFoundation
+        container = probe.container
         restorePresentation()
 
         let kinds: [PlaybackEngineKind]
@@ -230,6 +236,12 @@ final class PlayerSession {
     /// Re-opens the video with VLCKit (from the failure screen).
     func retryWithVLC() async {
         await restart(forcing: .vlc)
+    }
+
+    /// Re-opens the video with AVFoundation (hardware decoding + Picture in Picture).
+    func reopenWithAVFoundation() async {
+        guard isPlayableByAVFoundation else { return }
+        await restart(forcing: .avFoundation)
     }
 
     private func restart(forcing kind: PlaybackEngineKind?) async {
@@ -317,13 +329,13 @@ final class PlayerSession {
             if isLoaded { persistNow() }
             isPlaying = false
             displayLink?.isPaused = true
-            if engineKind == .avFoundation && forcedEngine == nil && !didAutoFallBack && currentTime < 2 {
+            let failedRightAway = engineKind == .avFoundation && forcedEngine == nil && !didAutoFallBack && currentTime < 2
+            status = .failed(message)
+            if failedRightAway {
                 // Failed right after opening: treat it like a load failure and fall back to VLC.
                 didAutoFallBack = true
                 showNotice("AVFoundation couldn't play this file, so Sable switched to the VLC engine.")
                 Task { await self.restart(forcing: .vlc) }
-            } else {
-                status = .failed(message)
             }
         case let .pictureInPictureChanged(active):
             isPictureInPictureActive = active

@@ -142,7 +142,9 @@ enum PlaybackAudioSession {
     static func activate() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
+            if session.category != .playback || session.mode != .moviePlayback {
+                try session.setCategory(.playback, mode: .moviePlayback, options: [])
+            }
             try session.setActive(true)
         } catch {
             playbackLog.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")

@@ -72,6 +72,10 @@ struct ControlsOverlay: View {
             .accessibilityIdentifier(AX.Player.rotate)
             PixelIconButton(.lock, label: "Lock controls", action: onLock)
                 .accessibilityIdentifier(AX.Player.lock)
+            PixelIconButton(.more, label: "Playback info and engine") {
+                onTool(.info)
+            }
+            .accessibilityIdentifier(AX.Player.moreButton)
         }
         .padding(.horizontal, Spacing.xs)
     }

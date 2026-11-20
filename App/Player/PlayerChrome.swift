@@ -254,6 +254,82 @@ struct SpeedSheet: View {
     }
 }
 
+/// "More": what is playing and with which engine, plus switching engines.
+struct PlaybackInfoSheet: View {
+    let session: PlayerSession
+    var onClose: () -> Void
+
+    var body: some View {
+        PixelSheet(title: "Playback", subtitle: session.item.title, onClose: onClose) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    SectionLabel("Now playing")
+                    infoRow("Engine", session.engineKind?.displayName ?? "—")
+                    infoRow("Container", containerLabel)
+                    infoRow("Picture", pictureLabel)
+                    infoRow("Duration", TimecodeFormatter.precise(session.duration))
+                    infoRow("Picture in Picture", session.isPictureInPictureSupported ? "Available" : "Not available")
+                    Text(engineNote)
+                        .font(Typo.reading)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Spacing.xxs)
+                    if session.engineKind == .avFoundation {
+                        Button("Reopen with VLC") {
+                            onClose()
+                            Task { await session.retryWithVLC() }
+                        }
+                        .buttonStyle(PixelButtonStyle(kind: .secondary))
+                        .accessibilityIdentifier(AX.Player.tryVLC)
+                    } else if session.engineKind == .vlc && session.isPlayableByAVFoundation {
+                        Button("Reopen with AVFoundation") {
+                            onClose()
+                            Task { await session.reopenWithAVFoundation() }
+                        }
+                        .buttonStyle(PixelButtonStyle(kind: .secondary))
+                    }
+                }
+                .padding(Spacing.md)
+            }
+        }
+    }
+
+    private func infoRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(Typo.body).foregroundStyle(Palette.textSecondary)
+            Spacer(minLength: Spacing.sm)
+            Text(value).font(Typo.mono).foregroundStyle(Palette.textPrimary).multilineTextAlignment(.trailing)
+        }
+        .frame(minHeight: 28)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var containerLabel: String {
+        switch session.container {
+        case .matroska: return session.item.fileExtension == "webm" ? "WebM" : "Matroska"
+        case .mp4: return session.item.fileExtension == "mov" ? "QuickTime" : "MP4"
+        case .other: return session.item.fileExtension.uppercased()
+        case nil: return "—"
+        }
+    }
+
+    private var pictureLabel: String {
+        guard let size = session.videoSize, size.width > 0, size.height > 0 else { return "—" }
+        return "\(Int(size.width.rounded()))×\(Int(size.height.rounded()))"
+    }
+
+    private var engineNote: String {
+        switch session.engineKind {
+        case .avFoundation:
+            return "AVFoundation decodes in hardware and supports Picture in Picture. Sable draws the subtitles itself on both engines."
+        case .vlc:
+            return "VLC plays containers and codecs AVFoundation can't (MKV, WebM, AVI…). VLCKit has no Picture in Picture, so playback pauses when Sable goes to the background."
+        case nil:
+            return ""
+        }
+    }
+}
+
 struct AspectSheet: View {
     let session: PlayerSession
     var onClose: () -> Void
