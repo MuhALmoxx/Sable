@@ -12,10 +12,13 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        doubleTapSeekSeconds = defaults.object(forKey: Keys.doubleTap) as? Double ?? 10
-        defaultRate = defaults.object(forKey: Keys.rate) as? Float ?? 1
+        let storedSeek = defaults.object(forKey: Keys.doubleTap) as? Double ?? 10
+        doubleTapSeekSeconds = AppSettings.doubleTapOptions.contains(storedSeek) ? storedSeek : 10
+        let storedRate = defaults.object(forKey: Keys.rate) as? Float ?? 1
+        defaultRate = AppSettings.rateOptions.contains(storedRate) ? storedRate : 1
         resumePlayback = defaults.object(forKey: Keys.resume) as? Bool ?? true
-        if let data = defaults.data(forKey: Keys.style), let style = try? JSONDecoder().decode(SubtitleStyle.self, from: data) {
+        if let data = defaults.data(forKey: Keys.style), var style = try? JSONDecoder().decode(SubtitleStyle.self, from: data) {
+            style.scale = min(AppSettings.subtitleScaleRange.upperBound, max(AppSettings.subtitleScaleRange.lowerBound, style.scale))
             subtitleStyle = style
         } else {
             subtitleStyle = .default
@@ -24,6 +27,7 @@ final class AppSettings {
         claudeModelID = defaults.string(forKey: Keys.claudeModel) ?? "claude-opus-5-5"
         librarySortRaw = defaults.string(forKey: Keys.sort) ?? LibrarySort.recentlyAdded.rawValue
         preferVLCForAll = defaults.object(forKey: Keys.vlcAll) as? Bool ?? false
+        libraryUsesGrid = defaults.object(forKey: Keys.grid) as? Bool ?? false
     }
 
     /// Seconds jumped by double-tapping the left/right half of the video (and skip buttons).
@@ -44,8 +48,14 @@ final class AppSettings {
     /// Force the VLC engine even for files AVFoundation can play (disables native PiP).
     var preferVLCForAll: Bool { didSet { defaults.set(preferVLCForAll, forKey: Keys.vlcAll) } }
 
+    /// Library shows a two-column grid instead of the list.
+    var libraryUsesGrid: Bool { didSet { defaults.set(libraryUsesGrid, forKey: Keys.grid) } }
+
     static let doubleTapOptions: [Double] = [5, 10, 15, 30]
     static let rateOptions: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    /// Allowed `SubtitleStyle.scale` values (stepped by `subtitleScaleStep` in Settings).
+    static let subtitleScaleRange: ClosedRange<Double> = 0.6...2.0
+    static let subtitleScaleStep: Double = 0.1
 
     private enum Keys {
         static let doubleTap = "settings.doubleTapSeek"
@@ -56,5 +66,6 @@ final class AppSettings {
         static let claudeModel = "settings.claudeModel"
         static let sort = "settings.librarySort"
         static let vlcAll = "settings.preferVLC"
+        static let grid = "settings.libraryGrid"
     }
 }
