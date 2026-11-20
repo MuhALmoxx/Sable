@@ -77,6 +77,8 @@ struct PlayerContentView: View {
     @State private var badgeTask: Task<Void, Never>?
     @State private var pan: PanState?
     @State private var hudTask: Task<Void, Never>?
+    /// Screen brightness before the first brightness pan; restored when the player goes away.
+    @State private var originalBrightness: CGFloat?
 
     var body: some View {
         GeometryReader { geo in
@@ -111,6 +113,9 @@ struct PlayerContentView: View {
             if phase == .background, session.engineKind == .vlc, session.isPlaying { session.pause() }
         }
         .onAppear { scheduleHide() }
+        .onDisappear {
+            if let originalBrightness { DeviceControls.brightness = originalBrightness }
+        }
     }
 
     // MARK: Layouts
@@ -236,6 +241,7 @@ struct PlayerContentView: View {
             if abs(dx) > abs(dy) {
                 pan = .scrub(start: session.currentTime, target: session.currentTime)
             } else if value.startLocation.x < size.width / 2 {
+                if originalBrightness == nil { originalBrightness = DeviceControls.brightness }
                 pan = .brightness(start: DeviceControls.brightness, level: DeviceControls.brightness)
             } else {
                 pan = .ignored
