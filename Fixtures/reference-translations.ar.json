@@ -1,0 +1,13 @@
+{
+  "_comment": "Human-written Arabic reference for the fixture dialogue. Used ONLY by the DEBUG mock translation provider in UI tests so screenshots show real, correctly shaped Arabic. Keys are the English cue texts (plain, tags removed).",
+  "Mara, are you still awake?": "مارا، هل ما زلتِ مستيقظة؟",
+  "I can't sleep.\nThe city is too loud tonight.": "لا أستطيع النوم.\nالمدينة صاخبة جدًا الليلة.",
+  "Then let's go up to the roof.": "إذن لنصعد إلى السطح.",
+  "Is it safe?": "هل هو آمن؟",
+  "Trust me.": "ثقي بي.",
+  "Look — every light down there\nis someone's story.": "انظري، كل ضوء هناك في الأسفل\nهو حكاية أحدهم.",
+  "You sound like your father, Idris.": "تتحدث مثل والدك يا إدريس.",
+  "He taught me to watch the night.": "لقد علّمني أن أتأمّل الليل.",
+  "Then let's watch it together, Mara.": "إذن لنتأمّله معًا يا مارا.",
+  "NIGHT CITY — 2:14 AM": "مدينة الليل — ٢:١٤ صباحًا"
+}

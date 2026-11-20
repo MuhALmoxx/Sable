@@ -1,0 +1,8 @@
+1
+00:00:03,000 --> 00:00:05,200
+Mara, tu es encore réveillée ?
+
+2
+00:00:07,500 --> 00:00:10,400
+Je n'arrive pas à dormir.
+La ville est trop bruyante ce soir.

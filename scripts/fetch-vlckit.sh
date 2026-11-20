@@ -8,16 +8,16 @@ URL="https://download.videolan.org/pub/cocoapods/prod/MobileVLCKit-3.7.5-a213fd1
 SHA256="a76f7a6cfcde4209b56f943e6e18400659d8a7a93ff482f8b1d059468d11e6be"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/Vendor"
-MARKER="$DEST/.mobilevlckit-$VERSION"
+MARKER="$DEST/.mobilevlckit-${VERSION}"
 
 if [ -f "$MARKER" ] && [ -d "$DEST/MobileVLCKit.xcframework" ]; then
-  echo "MobileVLCKit $VERSION already present"
+  echo "MobileVLCKit ${VERSION} already present"
   exit 0
 fi
 mkdir -p "$DEST"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-echo "Downloading MobileVLCKit $VERSION…"
+echo "Downloading MobileVLCKit ${VERSION}..."
 curl -fsSL --retry 3 -o "$TMP/vlckit.tar.xz" "$URL"
 if command -v shasum >/dev/null 2>&1; then
   echo "$SHA256  $TMP/vlckit.tar.xz" | shasum -a 256 -c -
@@ -31,4 +31,4 @@ cp "$TMP/MobileVLCKit-binary/COPYING.txt" "$DEST/MobileVLCKit-COPYING.txt"
 # Drop debug symbols and 32-bit slices we never ship (keeps CI caches small).
 find "$DEST/MobileVLCKit.xcframework" -name dSYMs -type d -prune -exec rm -rf {} +
 touch "$MARKER"
-echo "MobileVLCKit $VERSION ready in Vendor/"
+echo "MobileVLCKit ${VERSION} ready in Vendor/"
