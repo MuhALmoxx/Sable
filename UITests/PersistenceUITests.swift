@@ -21,7 +21,7 @@ final class PersistenceUITests: SableUITestCase {
         // Setup above takes a while on CI and the clip keeps playing: rewind first. (Positions in
         // the last 10 s count as "finished" and intentionally restart from 0 on reopen.)
         restartPlaybackFromBeginning()
-        let target: TimeInterval = 12
+        let target: TimeInterval = 5   // low, so even a slow CI poll pauses well before the "finished" zone (last 10 s)
         XCTAssertTrue(waitUntil("playback passes \(Int(target)) s", timeout: 30) {
             (self.currentPlaybackTime() ?? 0) >= target
         }, "Playback never reached \(target) s")
@@ -33,10 +33,11 @@ final class PersistenceUITests: SableUITestCase {
         relaunchKeepingState()
         openLibraryItem(Fixture.mp4Title)
 
-        // A fresh start could not reach saved − 3 s within the window, so this proves the resume.
-        let resumed = waitUntil("playback resumes near \(saved) s", timeout: 5) {
+        // Relaunched with -startPaused: the player opens at the restored position without playing,
+        // so the readout must match the saved time (a fresh start would show 0:00).
+        let resumed = waitUntil("playback resumes at \(saved) s", timeout: Timeout.playback) {
             guard let now = self.currentPlaybackTime() else { return false }
-            return now >= saved - 3
+            return abs(now - saved) <= 1.5
         }
         XCTAssertTrue(resumed, "The remembered position (\(saved) s) was not restored; now \(String(describing: currentPlaybackTime()))")
         pausePlayback()

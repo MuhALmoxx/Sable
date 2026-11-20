@@ -224,6 +224,13 @@ final class PlayerSession {
         if displayLink == nil {
             displayLink = DisplayLinkDriver(framesPerSecond: 30) { [weak self] in self?.tick() }
         }
+        #if DEBUG
+        // UI tests (-startPaused) check the restored position exactly, without the clip running on.
+        if UITestSupport.arguments.contains("-startPaused") {
+            refreshTime()
+            return true
+        }
+        #endif
         play()
         refreshTime()
         return true
