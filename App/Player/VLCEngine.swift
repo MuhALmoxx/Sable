@@ -57,6 +57,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var didReachEnd = false
     /// Restart of a finished input in progress (shared by concurrent seeks).
     private var restartTask: Task<Void, Never>?
+    /// Audio track to select again after a finished input was reopened.
+    private var pendingAudioReselect: String?
     private var initialAudioTrackID: String?
 
     private var audioSessionObservers: [NSObjectProtocol] = []
@@ -159,6 +161,13 @@ final class VLCEngine: NSObject, PlaybackEngine {
         let state = player.state
         if state == .playing {
             didReachEnd = false
+            if let id = pendingAudioReselect {
+                pendingAudioReselect = nil
+                if let value = Int32(id) {
+                    player.currentAudioTrackIndex = value
+                    selectedAudioTrackID = id
+                }
+            }
             reportBuffering(false)
             reportPlaying(true)
             enforceSubtitleSelection()
@@ -300,7 +309,25 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func play() {
         guard !isShutDown else { return }
         PlaybackAudioSession.activate()
+        if didReachEnd || player.state == .ended {
+            restartFinishedInput()
+            return
+        }
         didReachEnd = false
+        player.play()
+        player.rate = desiredRate
+    }
+
+    /// MobileVLCKit 3 does not reliably reopen an input that reached Ended with `play()` alone
+    /// (the picture stays on the last frame); VLC for iOS re-assigns the media. The user's audio
+    /// choice is re-applied once the reopened input is playing.
+    private func restartFinishedInput() {
+        pendingAudioReselect = selectedAudioTrackID
+        let media = player.media
+        player.stop()
+        if let media { player.media = media }
+        didReachEnd = false
+        PlaybackAudioSession.activate()
         player.play()
         player.rate = desiredRate
     }
@@ -318,8 +345,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
             // VLC can't seek a finished input: restart it, then jump. Rapid seeks (several
             // skip-back taps after the end) share one restart instead of racing each other.
             if restartTask == nil {
-                didReachEnd = false
-                player.play()
+                restartFinishedInput()
                 restartTask = Task { @MainActor [weak self] in
                     let deadline = CACurrentMediaTime() + 10
                     while let self, !self.isShutDown, !self.player.isPlaying, CACurrentMediaTime() < deadline {
