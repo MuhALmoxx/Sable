@@ -4,14 +4,14 @@ import XCTest
 /// full run to 100 %, cancel + resume from the checkpoint, SRT export.
 final class TranslationUITests: SableUITestCase {
     func testTranslateWholeEnglishTrackToArabicWithMockProvider() throws {
-        // 3 chunks x 2 s: long enough for the test to observe progress before 100 %.
-        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "2.0"])
+        // 3 chunks x 5 s: long enough for the test to observe progress before 100 % on slow CI.
+        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "5.0"])
         openLibraryItem(Fixture.mkvTitle)
         selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
         openTranslationSheet()
         startMockTranslation()
 
-        XCTAssertTrue(waitUntil("translation progress is shown", timeout: Timeout.screen) { self.translationFraction() != nil },
+        XCTAssertTrue(waitUntil("translation progress is shown", timeout: 40) { self.translationFraction() != nil },
                       "No progress readout (AX.Translation.progressLabel / AX.Translation.progress)")
         attachScreenshot("05-translation-progress")
         waitForTranslationToFinish()

@@ -18,7 +18,9 @@ final class PersistenceUITests: SableUITestCase {
         waitForOffset("+0.100", in: readout)
         closeTimingPanel()
 
-        resumePlayback()
+        // Setup above takes a while on CI and the clip keeps playing: rewind first. (Positions in
+        // the last 10 s count as "finished" and intentionally restart from 0 on reopen.)
+        restartPlaybackFromBeginning()
         let target: TimeInterval = 12
         XCTAssertTrue(waitUntil("playback passes \(Int(target)) s", timeout: 30) {
             (self.currentPlaybackTime() ?? 0) >= target

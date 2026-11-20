@@ -11,10 +11,7 @@ final class GuidedSyncUITests: SableUITestCase {
 
         // Park playback just after the speech burst of "I can't sleep." starts (7.5 s in the audio,
         // 10.0 s in the late file), so the mark lands on a known moment.
-        resumePlayback()
-        if (currentPlaybackTime() ?? 0) > Fixture.lateCueSpeechStart {
-            playerControl(AX.Player.skipBack).tap()
-        }
+        restartPlaybackFromBeginning()
         XCTAssertTrue(waitUntil("playback reaches the spoken line", timeout: Timeout.playback) {
             (self.currentPlaybackTime() ?? 0) >= Fixture.lateCueSpeechStart - 0.5
         }, "Playback did not reach \(Fixture.lateCueSpeechStart) s")
