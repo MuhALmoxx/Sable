@@ -239,7 +239,8 @@ struct TimingPanel: View {
             Text("Apply")
                 .frame(minHeight: Spacing.touch)
         }
-        .buttonStyle(PixelButtonStyle(kind: isEmpty ? .secondary : .primary))
+        // Secondary on purpose: the amber accent belongs to the active offset readout.
+        .buttonStyle(PixelButtonStyle(kind: .secondary))
         .syncDisabled(isEmpty)
         .accessibilityLabel("Apply offset")
         .accessibilityIdentifier(AX.Timing.apply)

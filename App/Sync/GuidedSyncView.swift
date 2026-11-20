@@ -204,12 +204,26 @@ private struct SyncMarkStep: View {
     }
 }
 
+/// A row of equal-width buttons that stacks vertically at accessibility text sizes.
+private struct SyncButtonRow<Content: View>: View {
+    let stacked: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let layout = stacked
+            ? AnyLayout(VStackLayout(spacing: Spacing.xs))
+            : AnyLayout(HStackLayout(spacing: Spacing.xs))
+        layout { content() }
+    }
+}
+
 private struct SyncTransportRow: View {
     let model: GuidedSyncModel
     let session: PlayerSession
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: Spacing.xs) {
+        SyncButtonRow(stacked: dynamicTypeSize.isAccessibilitySize) {
             RepeatingButton(action: { _ in model.stepPlayhead(by: -0.1) }) {
                 transportText("\(SyncFormat.minus)0.1 s")
             }
@@ -260,6 +274,7 @@ private struct SyncTransportRow: View {
 private struct SyncMarkedSection: View {
     let model: GuidedSyncModel
     let mark: TimeInterval
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -269,7 +284,7 @@ private struct SyncMarkedSection: View {
                 .foregroundStyle(Palette.textPrimary)
                 .accessibilityIdentifier(AX.Sync.markedTime)
 
-            HStack(spacing: Spacing.xs) {
+            SyncButtonRow(stacked: dynamicTypeSize.isAccessibilitySize) {
                 nudge(-0.1, "\(SyncFormat.minus)0.1", "Mark 0.1 seconds earlier", AX.Sync.nudgeBack)
                 nudge(-0.01, "\(SyncFormat.minus)0.01", "Mark 0.01 seconds earlier", AX.Sync.fineBack)
                 nudge(0.01, "+0.01", "Mark 0.01 seconds later", AX.Sync.fineForward)
