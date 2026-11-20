@@ -19,7 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-This license covers Sable's own source code. Bundled fonts (SIL OFL 1.1) and the
-MobileVLCKit framework (LGPL 2.1, downloaded at build time) keep their own licenses;
-see THIRD_PARTY_NOTICES.md and licenses/.
