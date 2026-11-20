@@ -18,9 +18,9 @@ SableKit uses only Foundation.
 
 ## MobileVLCKit 3.7.5: GNU Lesser General Public License v2.1
 
-- **What it is.** VLCKit is VideoLAN's Objective-C framework around libvlc. Sable uses it as the
-  second playback engine, for files AVFoundation cannot play (MKV, WebM, AVI and others) and for
-  image-based subtitles (PGS, VobSub).
+- **What it is.** VLCKit is VideoLAN's Objective-C framework around libVLC 3. Sable uses it as
+  the second playback engine, for files AVFoundation cannot play (MKV, WebM, AVI and others), as
+  the fallback when AVFoundation fails, and to render image-based subtitles (PGS, VobSub, DVB).
 - **Licence.** GNU Lesser General Public License, version 2.1. Full text:
   [`licenses/LGPL-2.1-VLCKit.txt`](licenses/LGPL-2.1-VLCKit.txt). The `COPYING.txt` shipped in the
   official binary archive is also placed in `Vendor/MobileVLCKit-COPYING.txt` when the framework

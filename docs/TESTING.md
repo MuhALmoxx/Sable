@@ -1,5 +1,19 @@
 # Testing Sable
 
+## Status
+
+All automated tests run on **GitHub Actions**: the SableKit package tests on Linux (`swift:6.1.2`
+container) and macOS, and the hosted unit tests and XCUITest journeys on an iOS simulator (on
+`main`, or on a manual dispatch with `ui_tests`). The job summary lists every test with its result
+and any skip reason.
+
+**No testing has been done on a physical iPhone.** Behaviour that only a device shows is
+unverified: hardware decoding and performance, Picture in Picture, background behaviour, rotation
+and gestures on real hardware, VLC's aspect/crop modes and native image subtitles, Apple's
+on-device translation (it does not run in the Simulator, so the UI tests use the mock provider),
+installing the sideloaded IPA, and the optional CI signing path (no signing secrets exist). No live
+Claude API call has been made; the Claude provider is tested against a fake HTTP client.
+
 | Layer | Where | Runs on | What it covers |
 |---|---|---|---|
 | Core (SableKit) | `Packages/SableKit/Tests` | Linux + macOS, every push | parsing, Matroska extraction, timing/sync math, translation engine, library store |
@@ -20,8 +34,9 @@ xcodebuild test ... -only-testing:SableUITests/GuidedSyncUITests  # one journey
 |---|---|
 | `-uiTesting` | before services exist: deletes the library root, the app's UserDefaults domain, the app's Keychain items and files in Documents; disables UIKit animations |
 | `-seedLibrary` | imports `night-roof.mkv` and `night-roof.mp4` (copies) as **"Night Roof (MKV)"** and **"Night Roof (MP4)"**, attaches `night-roof.late.en.srt` to the MP4, then generates durations and thumbnails in the background. Idempotent |
-| `-mockTranslation` | the translation feature registers its offline mock provider, which returns `UITestSupport.referenceTranslations()` |
-| `-mockTranslationDelay <s>` | seconds the mock waits per chunk (`UITestSupport.mockTranslationDelay`, default 0.8) so tests can watch progress and cancel mid-way |
+| `-mockTranslation` | the translation feature registers its offline mock provider ("Mock (UI tests)", free, preselected, 3 lines per chunk), which returns the reference Arabic from `reference-translations.ar.json` |
+| `-mockTranslationDelay <s>` | seconds the mock waits per chunk, so tests can watch progress and cancel mid-way. `MockTranslationProvider` reads the argument itself and defaults to 0.4 s (`UITestSupport.mockTranslationDelay` reports 0.8 s, but the mock does not use it) |
+| `-mockTranslationPaid` | marks the mock as paid, so the paid-confirmation step (`AX.Translation.confirmPaid`) appears |
 
 A relaunch **without** `-uiTesting` keeps everything, which is how persistence is tested.
 
@@ -60,7 +75,8 @@ The tests find everything through the identifiers in `App/Core/AccessibilityIDs.
 predicates, never fixed sleeps. They rely on these behaviours:
 
 - **Library:** each item is tappable with identifier `AX.Library.item(title)`.
-- **Player chrome** may auto-hide. A single tap on the upper part of `AX.Player.surface` shows it.
+- **Player chrome** never auto-hides under `-uiTesting` (nor while VoiceOver or Switch Control
+  runs). Otherwise it hides after 3 s of playback, and a single tap on `AX.Player.surface` shows it.
   Translate / Timing / Sync may sit directly in the chrome or behind `AX.Player.moreButton`.
   `AX.Player.playPause` is labelled "Pause" while playing and "Play" while paused.
   `AX.Player.currentTime` / `duration` labels are clock strings (`0:07`, `1:02:03`).
@@ -71,8 +87,8 @@ predicates, never fixed sleeps. They rely on these behaviours:
 - **Subtitle overlay:** `AX.Player.subtitleText` is present while a cue is visible, and its label is
   the cue text.
 - **Translation:** `AX.Translation.progressLabel` contains a percentage or "n / total" (the
-  progress bar's value "NN percent" also works). `cancel` stops after the current chunk, and
-  `resume` appears afterwards. `showArabic` (or the `tr:ar:` track row) activates the result.
+  progress bar's value "NN percent" also works). `cancel` stops the job, keeping every finished
+  line in the checkpoint, and `resume` appears afterwards. `showArabic` (or the `tr:ar:` track row) activates the result.
   `exportedPath` shows the written file's path or name, ending in `.srt`. With `-mockTranslation`
   the free mock provider is preselected, so no paid confirmation appears. The mock must pace its
   chunks with `UITestSupport.mockTranslationDelay` and use chunks small enough (≤ 3 lines) that a
@@ -86,10 +102,11 @@ predicates, never fixed sleeps. They rely on these behaviours:
 
 ## Skips
 
-Hosted unit tests that exercise another owner's code detect skeleton stubs at run time
+Hosted unit tests that exercise another component detect a missing implementation at run time
 (`SubtitleError.notImplemented`, the placeholder probe result, an empty track list) and call
-`XCTSkip`, so the suite stays green before integration and becomes live after it. The skip reason
-appears in the CI summary. UI journeys are not skipped. They need the integrated app.
+`XCTSkip`. They were written that way so the suite could run before the components were
+integrated; in the integrated app these skips should no longer trigger, and any that does is listed
+with its reason in the CI summary. UI journeys are never skipped.
 
 ## Running a subset on CI
 

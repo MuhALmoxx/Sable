@@ -1,8 +1,13 @@
 # Signing and installing Sable
 
-CI produces an **unsigned** IPA (`Sable-<sha>-unsigned.ipa`). iOS installs only signed apps, so
-the IPA has to be signed before it can go on an iPhone. There is no simulator IPA. To run Sable in
-the simulator, build it from source (see the README).
+CI produces an **unsigned** IPA (`Sable-<sha>-unsigned.ipa`, published as `Sable-unsigned.ipa`),
+because the repository has no signing secrets. iOS installs only signed apps, so the IPA has to be
+signed before it can go on an iPhone: with your Apple ID through AltStore, SideStore or Sideloadly
+(option 1), or with your own certificate and provisioning profile (option 2). There is no simulator
+IPA. To run Sable in the simulator, build it from source (see the README).
+
+The IPA has not yet been installed on a physical iPhone by the developers, so treat the steps below
+as the documented procedure rather than a tested one.
 
 Check the download first. The `.sha256` file next to every IPA (and the release notes) gives its
 checksum:
@@ -63,7 +68,7 @@ signature, so signing in the other order invalidates the app.
 
 When these repository secrets exist, the `ios` job also archives a signed build
 (`xcodebuild archive` + `-exportArchive`). It uploads the result as the workflow artifact
-`Sable-signed-<method>-ipa-<sha>`:
+`Sable-signed-<development|adhoc>-ipa-<sha>`:
 
 | Secret | Content |
 |---|---|
