@@ -90,6 +90,23 @@ enum AX {
         static let export = "translation.export"
         static let exportedPath = "translation.exportedPath"
         static let confirmPaid = "translation.confirmPaid"
+        // Added by the translation agent.
+        static func sourceTrack(_ id: String) -> String { "translation.sourceTrack.\(id)" }
+        static func provider(_ id: String) -> String { "translation.provider.\(id)" }
+        static let claudeModel = "translation.claudeModel"
+        static let addAPIKey = "translation.addAPIKey"
+        static let estimate = "translation.estimate"
+        static let cancelConfirm = "translation.cancelConfirm"
+        static let useCached = "translation.useCached"
+        static let translateAgain = "translation.translateAgain"
+        static let discard = "translation.discard"
+        static let error = "translation.error"
+        static let retry = "translation.retry"
+        static let showEnglish = "translation.showEnglish"
+        static let preview = "translation.preview"
+        static let exportApplyOffset = "translation.exportApplyOffset"
+        static let exportRTLMarks = "translation.exportRTLMarks"
+        static let share = "translation.share"
     }
     enum Timing {
         static let panel = "timing.panel"
@@ -143,5 +160,12 @@ enum AX {
         static let version = "settings.version"
         static let licensesScreen = "settings.licensesScreen"
         static func license(_ id: String) -> String { "settings.license.\(id)" }
+        // Added by the translation agent.
+        static let apiKeySave = "settings.apiKey.save"
+        static let apiKeyTest = "settings.apiKey.test"
+        static let apiKeyRemove = "settings.apiKey.remove"
+        static let apiKeyStatus = "settings.apiKey.status"
+        static func defaultProvider(_ id: String) -> String { "settings.translationProvider.\(id)" }
+        static func claudeModel(_ id: String) -> String { "settings.claudeModel.\(id)" }
     }
 }
