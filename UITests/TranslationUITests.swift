@@ -20,6 +20,7 @@ final class TranslationUITests: SableUITestCase {
         }
 
         showArabicTrack()
+        restartPlaybackFromBeginning()   // the clip is only 40 s long and keeps playing during the job
         let arabic = waitForSubtitleText(timeout: 30, description: "Arabic subtitle text is shown") { self.containsArabic($0) }
         XCTAssertFalse(containsEnglishDialogue(arabic), "The overlay should show the translation, not the English line: \(arabic)")
         _ = playerControl(AX.Player.playPause)

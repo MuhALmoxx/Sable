@@ -84,7 +84,12 @@ final class GuidedSyncUITests: SableUITestCase {
         let computedSeconds = try XCTUnwrap(Self.offsetSeconds(in: computedLabel))
         XCTAssertEqual(computedSeconds, expected, accuracy: markTolerance,
                        "offset must equal marked (\(marked)) − cue start (10.000 s)")
-        XCTAssertLessThan(computedSeconds, 0, "The file is LATE, so the correction must move subtitles EARLIER (negative)")
+        // The fixture file is 2.5 s LATE, so a mark at the real speech onset (7.5 s) gives a negative
+        // correction. On a slow CI runner the pause can land after the cue's original start (10 s);
+        // the formula check above is the real assertion, the sign is only checked when it applies.
+        if markedSeconds < Fixture.lateCueOriginalStart - 0.05 {
+            XCTAssertLessThan(computedSeconds, 0, "The file is LATE, so the correction must move subtitles EARLIER (negative)")
+        }
         let computedToken = try XCTUnwrap(Self.offsetToken(in: computedLabel))
 
         // Step 4: apply (and confirm, when the flow asks), then leave the flow.

@@ -1,5 +1,7 @@
 # Sable
 
+<img src="design/icon/AppIcon-180.png" width="96" alt="Sable app icon">
+
 **Sable** is an open-source video player for iPhone. It is built natively in Swift and SwiftUI for
 iOS 18+, with a black pixel-art interface. It translates whole subtitle tracks from English to
 Arabic, has precise manual subtitle timing, and offers a guided way to sync subtitles that run
@@ -82,17 +84,18 @@ No account, no tracking, no Sable server. MIT-licensed.
 
 ## Screenshots
 
-> Screenshots are captured by the UI tests on every `main` build. They are in the
-> `logs-and-screens-<sha>` workflow artifact (`screens/`).
-> **TODO(integrator):** copy the latest set into `docs/screenshots/` and replace this table.
+Captured automatically by the simulator UI tests on GitHub Actions (iPhone simulator, Debug build
+with the bundled sample clips and the offline mock translator). They are not from a physical device.
 
-| Library | Player | Landscape | Tracks |
+| Library | Player | Subtitle tracks | Arabic subtitles |
 |---|---|---|---|
-| `01-library.png` | `02-player-portrait.png` | `03-player-landscape.png` | `04-tracks.png` |
+| <img src="docs/screenshots/01-library.png" width="200" alt="Library"> | <img src="docs/screenshots/02-player-portrait.png" width="200" alt="Player, portrait"> | <img src="docs/screenshots/04-tracks.png" width="200" alt="Subtitle and audio tracks"> | <img src="docs/screenshots/06-arabic-subtitles.png" width="200" alt="Arabic translation rendered right-to-left"> |
 
-| Translation | Arabic subtitles | Timing | Guided sync | Settings |
-|---|---|---|---|---|
-| `05-translation-progress.png` | `06-arabic-subtitles.png` | `07-timing.png` | `08-sync-candidates.png` | `09-settings.png` |
+| Translation | Timing | Guided sync | Settings |
+|---|---|---|---|
+| <img src="docs/screenshots/05-translation-progress.png" width="200" alt="Whole-track translation in progress"> | <img src="docs/screenshots/07-timing.png" width="200" alt="Manual timing panel"> | <img src="docs/screenshots/08-sync-candidates.png" width="200" alt="Which line did the character say?"> | <img src="docs/screenshots/09-settings.png" width="200" alt="Settings"> |
+
+<img src="docs/screenshots/03-player-landscape.png" width="620" alt="Player, landscape">
 
 ## Format & codec support
 
