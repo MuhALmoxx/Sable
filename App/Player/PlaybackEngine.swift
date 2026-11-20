@@ -27,6 +27,8 @@ enum PlaybackEngineEvent: Sendable {
     case audioTracksChanged
     case ended
     case failed(String)
+    /// System Picture in Picture started (true) or stopped (false).
+    case pictureInPictureChanged(Bool)
 }
 
 @MainActor
@@ -39,7 +41,10 @@ protocol PlaybackEngine: AnyObject {
     func load(url: URL, startAt: TimeInterval) async throws
     func play()
     func pause()
+    /// Precise seek (tolerance zero on AVFoundation); returns when the engine has applied it.
     func seek(to seconds: TimeInterval) async
+    /// Fast, imprecise seek used while the user drags the scrubber (fire and forget).
+    func scrub(to seconds: TimeInterval)
     var currentTime: TimeInterval { get }
     var duration: TimeInterval { get }
     var isPlaying: Bool { get }
@@ -50,8 +55,11 @@ protocol PlaybackEngine: AnyObject {
     func selectAudioTrack(id: String)
 
     var aspectMode: AspectMode { get set }
+    /// Decoded picture size (display aspect applied) once known; .zero before.
+    var presentationSize: CGSize { get }
 
     var supportsPictureInPicture: Bool { get }
+    var isPictureInPictureActive: Bool { get }
     func togglePictureInPicture()
 
     /// For image-based (PGS/VobSub) tracks Sable cannot draw itself: let the engine render the
