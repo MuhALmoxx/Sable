@@ -18,6 +18,18 @@ final class ClaudeProviderTests: XCTestCase {
 
     private let okText = #"{"translations":[{"id":"3","text":"إذن لنصعد إلى السطح."},{"id":"4","text":"<i>هل هو آمن؟</i>"}],"names":[{"source":"Mara","target":"مارا"}]}"#
 
+    func testHaikuRequestsOmitServerSideFallbacks() async throws {
+        let http = FakeHTTPClient(json: messagesJSON(text: okText))
+        let provider = ClaudeTranslationProvider(apiKey: "sk-test", modelID: "claude-haiku-5-5", httpClient: http)
+        _ = try await provider.translate(request())
+        let sent = try XCTUnwrap(http.requests.first)
+        XCTAssertNil(sent.value(forHTTPHeaderField: "anthropic-beta"), "Haiku has no server-side fallback")
+        let body = try jsonObject(sent.httpBody)
+        XCTAssertNil(body["fallbacks"])
+        XCTAssertTrue(ClaudeTranslationProvider.supportsServerSideFallback(modelID: "claude-sonnet-5-5"))
+        XCTAssertFalse(ClaudeTranslationProvider.supportsServerSideFallback(modelID: "claude-haiku-5-5"))
+    }
+
     func testRequestHeadersAndBodyShape() async throws {
         let http = FakeHTTPClient(json: messagesJSON(text: okText))
         let provider = ClaudeTranslationProvider(apiKey: "  sk-test-key \n", modelID: "claude-opus-5-5", httpClient: http)

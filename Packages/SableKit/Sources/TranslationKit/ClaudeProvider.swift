@@ -169,24 +169,31 @@ public struct ClaudeTranslationProvider: TranslationProvider {
 
     // MARK: Request
 
-    static func applyHeaders(to request: inout URLRequest, apiKey: String) {
+    static func applyHeaders(to request: inout URLRequest, apiKey: String, fallbackBeta: Bool = false) {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta")
+        if fallbackBeta { request.setValue(betaHeader, forHTTPHeaderField: "anthropic-beta") }
+    }
+
+    /// Server-side refusal fallbacks exist for the Opus/Sonnet/Fable lines; Claude Haiku has none,
+    /// so the parameter (and its beta header) is only sent where the API accepts it.
+    public static func supportsServerSideFallback(modelID: String) -> Bool {
+        !modelID.lowercased().contains("haiku")
     }
 
     public func makeURLRequest(for request: TranslationChunkRequest) throws -> URLRequest {
         var urlRequest = URLRequest(url: Self.messagesURL, timeoutInterval: Self.requestTimeout)
         urlRequest.httpMethod = "POST"
-        Self.applyHeaders(to: &urlRequest, apiKey: apiKey)
+        Self.applyHeaders(to: &urlRequest, apiKey: apiKey,
+                          fallbackBeta: Self.supportsServerSideFallback(modelID: modelID))
         urlRequest.httpBody = requestBody(for: request).data
         return urlRequest
     }
 
     public func requestBody(for request: TranslationChunkRequest) -> JSONValue {
         let system = ClaudePrompt.system(source: request.source, target: request.target)
-        return .object([
+        var fields: [(String, JSONValue)] = [
             ("model", .string(modelID)),
             ("max_tokens", .int(Self.maxTokens)),
             // Stable prefix (instructions + language guidance) marked for prompt caching: every
@@ -207,8 +214,11 @@ public struct ClaudeTranslationProvider: TranslationProvider {
                     ("schema", ClaudePrompt.outputSchema),
                 ])),
             ])),
-            ("fallbacks", .string("default")),
-        ])
+        ]
+        if Self.supportsServerSideFallback(modelID: modelID) {
+            fields.append(("fallbacks", .string("default")))
+        }
+        return .object(fields)
     }
 
     // MARK: Response

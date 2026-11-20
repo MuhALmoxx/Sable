@@ -626,7 +626,7 @@ final class PlayerSession {
         if engineKind == .vlc, let ordinal = nativeOrdinal(for: descriptor) {
             engine?.setNativeSubtitle(streamOrdinal: ordinal, delay: timing.offset)
         } else {
-            showNotice("“\(descriptor.title)” is an image-based track (\(SubtitleRepository.imageCodecLabel(descriptor))). Only the VLC engine can display it — choose “Use VLC for all videos” in Settings.")
+            showNotice("“\(descriptor.title)” is an image-based track (\(SubtitleRepository.imageCodecLabel(descriptor))). Only the VLC engine can display it — turn on “Use VLC engine for every file” in Settings (or reopen this video with VLC from the More menu).")
         }
     }
 
