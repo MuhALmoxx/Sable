@@ -120,7 +120,7 @@ Font findings (checked with fontTools):
   live area). Optical centre is the grid centre (6, 6); triangles sit half a cell right of the
   box centre, bubbles sit high with the tail below.
 - **Weight:** object pictograms (file, folder, film, clock, lock, screen) use 1-cell outlines;
-  marks and actions (play, pause, close, plus, minus, check, chevrons, arrows heads) are solid or
+  marks and actions (play, pause, close, plus, minus, check, chevrons, arrowheads) are solid or
   use 2-cell strokes. Containers have notched corners.
 - **Metaphors:** subtitles = speech box with two lines · translate = solid glyph block → arrow →
   outlined glyph block · sync = two offset bars with opposing arrowheads · timer = clock ·

@@ -36,15 +36,20 @@ struct PixelIcon: View {
 
     @Environment(\.displayScale) private var displayScale
 
+    /// With `color: nil` the glyph uses the inherited foreground style (e.g. a button's tint).
     var body: some View {
         let bitmap = PixelGlyphArt.bitmap(for: glyph)
         let scale = displayScale
-        Canvas { context, canvasSize in
+        let canvas = Canvas { context, canvasSize in
             context.fill(bitmap.path(in: canvasSize, scale: scale), with: .foreground)
         }
-        .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.foreground))
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+        if let color {
+            canvas.foregroundStyle(color)
+        } else {
+            canvas
+        }
     }
 }
 
