@@ -200,4 +200,24 @@ enum AX {
         static func defaultProvider(_ id: String) -> String { "settings.translationProvider.\(id)" }
         static func claudeModel(_ id: String) -> String { "settings.claudeModel.\(id)" }
     }
+    // Added by the ChatGPT app agent ("Sign in with ChatGPT": Settings block + Translate sheet).
+    enum ChatGPT {
+        static let block = "chatgpt.block"
+        static let previewTag = "chatgpt.previewTag"
+        static let disclosure = "chatgpt.disclosure"
+        static let signIn = "chatgpt.signIn"
+        static let cancelSignIn = "chatgpt.cancelSignIn"
+        static let error = "chatgpt.error"
+        static let status = "chatgpt.status"
+        static let modelPicker = "chatgpt.model"
+        static let modelsRetry = "chatgpt.modelsRetry"
+        static let usageIndicator = "chatgpt.usage"
+        static let manageUsage = "chatgpt.manageUsage"
+        static let signOut = "chatgpt.signOut"
+        static let unavailableReason = "chatgpt.unavailableReason"
+        static let confirmation = "chatgpt.confirmation"
+        static let notice = "chatgpt.notice"
+        static let noticeDismiss = "chatgpt.notice.gotIt"
+        static let limitReached = "chatgpt.limitReached"
+    }
 }

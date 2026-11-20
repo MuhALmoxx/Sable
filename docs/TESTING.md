@@ -60,12 +60,28 @@ The audio "speech" bursts start exactly at each cue start of `Fixtures/src/sampl
 | `SmokeUITests` | app launches to the library | `00-launch` |
 | `LibraryUITests` | empty state after `-uiTesting`; both seeded items listed; Settings opens and the licenses mention VLC | `01-library`, `09-settings` |
 | `PlaybackUITests` | MP4 opens, playback time advances by ≥ 2 s, duration ≈ 40 s, landscape layout, pause stops the clock, MKV lists both audio tracks | `02-player-portrait`, `03-player-landscape` |
-| `SubtitleTracksUITests` | MKV lists `emb:mkv:4/5/6` + Off; French then English text appears; Off clears it; MP4 lists `emb:mp4:4` and the external SRT, whose text appears | `04-tracks`, `04b-external-srt` |
+| `SubtitleTracksUITests` | track switches **during playback** (no pause, rewind or seek around a switch; a rewind happens only before opening the track list when too little of the clip is left). MKV: lists `emb:mkv:4/5/6` + Off, English (default) → French → Off → English; MP4: embedded `emb:mp4:4` → external SRT → Off → external; MKV: English ↔ Arabic translation (mock, `-mockTranslationDelay 0.1`). After each switch the old track's text must be gone (any overlay reading from the old track fails the test) and the new track's text must appear within 12 s; Off must clear the overlay within 2 s and keep it empty for 4 s | `04-tracks`, `04b-external-srt` |
 | `TranslationUITests` | mock translation of the English track reaches 100 % and Arabic text is shown; cancel mid-way → Resume continues from the checkpoint (never below it, never from 0); export shows an `.srt` path | `05-translation-progress`, `05b-translation-cancelled`, `05c-translation-exported`, `06-arabic-subtitles` |
 | `TimingUITests` | `0.000 s` → +0.1 → `+0.100 s` ("later") → −0.1 → `0.000 s`; typed `-2.5` → `−2.500 s` ("earlier"), +1 → `−1.500 s`, Reset → `0.000 s`, Undo, Undo | `07-timing` |
 | `GuidedSyncUITests` | on the late SRT: park playback at the spoken line, Mark, pick cue "2", computed offset = marked − 10.000 s (negative), Apply; timing panel shows it; Undo → `0.000 s` | `08-sync-candidates` |
 | `PersistenceUITests` | +0.1 s timing, external SRT selected, play past 12 s, close; terminate + relaunch without `-uiTesting`: position resumes (≥ saved − 3 s within 5 s), the external row is still selected, offset still `+0.100 s` | `10-relaunch-resumed` |
 | `ParsingHelperUITests` | the label parsers used by the journeys (no app launch) | none |
+| `ChatGPTSignInUITests` | Settings › Translation shows the signed-out ChatGPT plan block after `-uiTesting`: the "Sign in with ChatGPT" button (never tapped — no ChatGPT account or network login on CI, and no fake signed-in mode), the disclosure text (Plus or Pro, counts toward ChatGPT usage limits, not OpenAI API access) and the "OpenAI preview" tag; no sign-out/account controls | `11-settings-chatgpt` |
+
+ChatGPT plan hosted unit tests (`AppTests/`): `ChatGPTKeychainStoreTests` (credential/account
+round trip, sign-out keeps the account, `ext_agent_host_id` created once and persisted; one test
+uses the real Keychain under a throwaway service and skips with a reason if the unsigned simulator
+build has no Keychain access), `ChatGPTLoopbackServerTests` (real TCP on 127.0.0.1: callback
+delivered once with a 200 page and the receiver stops; wrong paths 404, other methods 405, a
+foreign `state` 400, busy preferred port falls back, timeout; request parsing) and
+`ChatGPTPlanOptionTests` (settings keys, provider tags, plan error messages, model choice).
+
+Subtitle switching hosted unit tests (`AppTests/SubtitleSwitchingTests`) drive `PlayerSession`
+without an engine (clock at 0 s; each timing group offset so its first line shows at 0 s): embedded
+English → French (the English text is gone while French loads) → Off → English; embedded MP4 →
+external → Off → external; English ↔ Arabic translation (shared timing group, original text);
+library changes leave a shown translation alone while a regenerated one is swapped in place; a
+failed switch brings the previous track back with the error.
 
 CI exports the screenshots to the `logs-and-screens-<sha>` artifact (`screens/NN-name.png`), and the
 job summary lists every test with its result and skip reason.
@@ -86,7 +102,8 @@ predicates, never fixed sleeps. They rely on these behaviours:
 - **Track rows** `AX.Tracks.subtitle(id)` use the track ids from the contracts. The selected row
   carries the `.isSelected` accessibility trait (or an accessibility value containing "selected").
 - **Subtitle overlay:** `AX.Player.subtitleText` is present while a cue is visible, and its label is
-  the cue text.
+  the cue text. Under `-uiTesting` (DEBUG) its accessibility value is the id of the track the drawn
+  cues come from (the embedded MP4 track and the external SRT share their dialogue).
 - **Translation:** `AX.Translation.progressLabel` contains a percentage or "n / total" (the
   progress bar's value "NN percent" also works). `cancel` stops the job, keeping every finished
   line in the checkpoint, and `resume` appears afterwards. `showArabic` (or the `tr:ar:` track row) activates the result.

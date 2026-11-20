@@ -371,6 +371,10 @@ public actor TranslationEngine {
                     wait = retryPolicy.delay(forRetry: attempt)
                 case .network:
                     wait = retryPolicy.delay(forRetry: attempt)
+                case .signInRequired, .planUsageLimitReached, .planNotEligible:
+                    // Subscription sign-in/plan problems: retrying cannot help and would spend the
+                    // user's plan usage. Stop the job; the checkpoint lets Resume continue later.
+                    throw error
                 default:
                     throw error
                 }

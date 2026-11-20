@@ -30,8 +30,12 @@ struct TranslationJobState: Equatable {
     var resultTrackID: String?
     /// First lines of the result, for the completion preview.
     var preview: [String] = []
-    /// The failure needs the user to fix something in Settings (key, quota).
+    /// The failure needs the user to fix something in Settings (key, quota, ChatGPT sign-in).
     var needsSettings = false
+    /// ChatGPT plan: the plan's usage limit stopped the job (checkpoint kept; Manage usage + Resume).
+    var planLimitReached = false
+    /// ChatGPT plan: the account is not eligible (Plus or Pro required).
+    var planNotEligible = false
 }
 
 /// What the sheet shows before a job starts.
@@ -45,13 +49,23 @@ struct TranslationProviderOption: Identifiable, Equatable {
     let descriptor: TranslationProviderDescriptor
     /// nil when usable; otherwise why not ("Add API key").
     var unavailableReason: String?
+    /// Short tag for the unavailable state when the reason is a sentence (nil: the reason is the tag).
+    var unavailableTag: String? = nil
     var id: String { descriptor.id }
     var isAvailable: Bool { unavailableReason == nil }
 
     var tags: [String] {
+        // Plan-backed (ChatGPT): neither "Free" nor "Paid" — it uses the person's subscription limits.
+        if descriptor.usesSubscriptionAllowance { return ["Plus or Pro", "Preview"] }
         var tags: [String] = [descriptor.isPaid ? "Paid" : "Free"]
         if descriptor.id == AppleTranslationProvider.providerID { tags.append("On-device") }
         return tags
+    }
+
+    /// `tags` plus the unavailable state, as shown on provider rows.
+    var displayTags: [String] {
+        guard let reason = unavailableReason else { return tags }
+        return tags + [unavailableTag ?? reason]
     }
 }
 
@@ -72,6 +86,8 @@ final class TranslationService {
     let keychain: KeychainStore
     let engine: TranslationEngine
     let appleBroker: AppleTranslationBroker
+    /// "Sign in with ChatGPT" (ChatGPT plan provider): sign-in state, tokens and models.
+    let chatGPT: ChatGPTAccountService
 
     static let claudeKeyAccount = "anthropic-api-key"
     static let target = TargetLanguages.arabic
@@ -93,6 +109,7 @@ final class TranslationService {
         self.keychain = keychain
         self.engine = TranslationEngine(storeDirectory: library.translationsDirectory)
         self.appleBroker = AppleTranslationBroker()
+        self.chatGPT = ChatGPTAccountService(store: KeychainChatGPTStore(storage: keychain))
         refreshKeyState()
         Task { [weak self] in await self?.refreshAppleAvailability() }
     }
@@ -107,7 +124,8 @@ final class TranslationService {
         #endif
     }
 
-    /// Providers in picker order: Mock (UI tests), Apple on-device (when supported), Claude.
+    /// Providers in picker order: Mock (UI tests), Apple on-device (when supported), Claude,
+    /// ChatGPT plan.
     var providerOptions: [TranslationProviderOption] {
         var options: [TranslationProviderOption] = []
         #if DEBUG
@@ -120,7 +138,33 @@ final class TranslationService {
         }
         options.append(TranslationProviderOption(descriptor: ClaudeTranslationProvider.descriptor,
                                                  unavailableReason: hasClaudeKey ? nil : "Add API key"))
+        let chatGPTState = chatGPTAvailability
+        options.append(TranslationProviderOption(descriptor: ChatGPTPlanTranslationProvider.descriptor,
+                                                 unavailableReason: chatGPTState?.reason, unavailableTag: chatGPTState?.tag))
         return options
+    }
+
+    /// nil when the ChatGPT plan provider can run; otherwise why not (sentence + short tag).
+    private var chatGPTAvailability: (reason: String, tag: String)? {
+        guard chatGPT.isSignedIn else { return ("Sign in with ChatGPT in Settings › Translation", "Sign in") }
+        guard chatGPTModelID == nil else { return nil }
+        switch chatGPT.modelsState {
+        case .idle, .loading:
+            return ("Loading the models of your ChatGPT plan…", "Loading")
+        case .failed:
+            return ("Couldn't load your ChatGPT models. Try again in Settings › Translation.", "No model")
+        case .loaded:
+            return ("No ChatGPT model is available to this account.", "No model")
+        }
+    }
+
+    /// The ChatGPT model jobs use: the one chosen in Settings, else the first the account lists.
+    var chatGPTModelID: String? { chatGPT.effectiveModelID(chosen: settings.chatGPTModelID) }
+
+    /// Display name of the ChatGPT model jobs use ("" when none).
+    var chatGPTModelName: String {
+        guard let id = chatGPTModelID else { return "" }
+        return chatGPT.model(for: id)?.displayName ?? id
     }
 
     /// The provider to preselect: the default from Settings when usable, else the first usable one.
@@ -141,6 +185,7 @@ final class TranslationService {
         switch providerID {
         case ClaudeTranslationProvider.providerID: return settings.claudeModelID
         case AppleTranslationProvider.providerID: return "apple-on-device"
+        case ChatGPTPlan.providerID: return chatGPTModelID ?? ""
         default:
             #if DEBUG
             return MockTranslationProvider.shared.modelID
@@ -160,6 +205,15 @@ final class TranslationService {
                 throw TranslationError.providerUnavailable("On-device translation is not supported on this iPhone.")
             }
             return AppleTranslationProvider(broker: appleBroker)
+        case ChatGPTPlan.providerID:
+            guard chatGPT.isSignedIn else {
+                throw TranslationError.signInRequired("Sign in with ChatGPT in Settings › Translation.")
+            }
+            guard let modelID = chatGPTModelID else {
+                throw TranslationError.providerUnavailable("Choose a ChatGPT model in Settings › Translation first.")
+            }
+            return ChatGPTPlanTranslationProvider(modelID: modelID, tokens: chatGPT.tokens,
+                                                  httpClient: URLSessionHTTPClient(session: .shared))
         default:
             #if DEBUG
             if id == MockTranslationProvider.providerID { return MockTranslationProvider.shared }
@@ -199,6 +253,20 @@ final class TranslationService {
     func validateClaudeKey() async throws {
         guard let key = keychain.string(for: Self.claudeKeyAccount) else { throw TranslationError.missingAPIKey }
         try await ClaudeTranslationProvider.validate(apiKey: key)
+    }
+
+    // MARK: ChatGPT plan
+
+    /// Stops every running ChatGPT plan job (each keeps its checkpoint), then signs out.
+    func signOutOfChatGPT() async {
+        cancelChatGPTJobs()
+        await chatGPT.signOut()
+    }
+
+    private func cancelChatGPTJobs(except excluded: TranslationJobKey? = nil) {
+        for (key, state) in jobs where state.providerID == ChatGPTPlan.providerID && key != excluded {
+            tasks[key]?.cancel()
+        }
     }
 
     // MARK: Jobs
@@ -353,10 +421,27 @@ final class TranslationService {
     private func markFailed(_ key: TranslationJobKey, spec: TranslationJobSpec, error: Error) {
         var state = jobs[key] ?? TranslationJobState(phase: .running, providerID: spec.providerID, modelID: spec.modelID)
         state.phase = .failed(Self.message(for: error))
+        state.planLimitReached = false
+        state.planNotEligible = false
         if let t = error as? TranslationError {
             switch t {
-            case .missingAPIKey, .invalidAPIKey, .quotaExceeded: state.needsSettings = true
+            case .missingAPIKey, .invalidAPIKey, .quotaExceeded, .signInRequired: state.needsSettings = true
             default: state.needsSettings = false
+            }
+            switch t {
+            case .planUsageLimitReached:
+                state.planLimitReached = true
+                // Pause the other plan-backed jobs too; each keeps its checkpoint for Resume.
+                cancelChatGPTJobs(except: key)
+            case .planNotEligible:
+                state.planNotEligible = true
+            case .signInRequired:
+                if spec.providerID == ChatGPTPlan.providerID, chatGPT.isSignedIn {
+                    cancelChatGPTJobs(except: key)
+                    Task { await chatGPT.sessionEnded() }
+                }
+            default:
+                break
             }
         }
         jobs[key] = state
@@ -369,10 +454,21 @@ final class TranslationService {
 
     static func message(for error: Error) -> String {
         if let t = error as? TranslationError {
-            if case let .mappingMismatch(missing, _) = t {
+            switch t {
+            case let .mappingMismatch(missing, _):
                 return "Line \(missing.first ?? "?") could not be matched to its translation after several attempts. Finished lines are saved — tap Retry to continue."
+            case .signInRequired:
+                return "Your ChatGPT sign-in has ended. Sign in with ChatGPT again in Settings › Translation, then Resume — finished lines are kept."
+            case .planUsageLimitReached:
+                return "You've reached your ChatGPT plan's usage limit. Finished lines are saved; Resume once your plan allows more usage. Manage usage opens your limits in ChatGPT settings."
+            case .planNotEligible:
+                return "This ChatGPT account can't use its plan in Sable. ChatGPT plan usage needs an eligible ChatGPT Plus or Pro plan. Choose another provider, or check your plan in ChatGPT."
+            default:
+                return t.errorDescription ?? "Translation failed."
             }
-            return t.errorDescription ?? "Translation failed."
+        }
+        if let auth = error as? ChatGPTAuthError {
+            return ChatGPTAccountService.message(for: auth)
         }
         return error.localizedDescription
     }

@@ -171,11 +171,15 @@ public struct TranslationProviderDescriptor: Hashable, Sendable, Identifiable {
     public var usesContext: Bool
     /// Units per request the job planner should use.
     public var recommendedChunkSize: Int
+    /// True when requests count against the user's subscription plan's usage limits (not
+    /// dollars), e.g. the ChatGPT plan: the UI must disclose it and get confirmation before a job.
+    public var usesSubscriptionAllowance: Bool
 
     public init(id: String, displayName: String, summary: String, isPaid: Bool, requiresAPIKey: Bool,
-                usesContext: Bool, recommendedChunkSize: Int) {
+                usesContext: Bool, recommendedChunkSize: Int, usesSubscriptionAllowance: Bool = false) {
         self.id = id; self.displayName = displayName; self.summary = summary; self.isPaid = isPaid
         self.requiresAPIKey = requiresAPIKey; self.usesContext = usesContext; self.recommendedChunkSize = recommendedChunkSize
+        self.usesSubscriptionAllowance = usesSubscriptionAllowance
     }
 }
 
@@ -199,6 +203,14 @@ public enum TranslationError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedLanguagePair
     case providerUnavailable(String)
     case nothingToTranslate
+    /// The subscription sign-in (e.g. Sign in with ChatGPT) is missing, expired or revoked.
+    /// Terminal for the job; the checkpoint is kept so Resume continues after signing in.
+    case signInRequired(String)
+    /// The subscription plan's usage limit is reached. Terminal for the job (no retry, no guessed
+    /// reset time); the checkpoint is kept so Resume continues later.
+    case planUsageLimitReached
+    /// The signed-in account's plan cannot be used by apps. Terminal for the job.
+    case planNotEligible(String)
 
     public var errorDescription: String? {
         switch self {
@@ -214,6 +226,10 @@ public enum TranslationError: Error, Equatable, Sendable, LocalizedError {
         case .unsupportedLanguagePair: return "This provider cannot translate between these languages."
         case let .providerUnavailable(m): return m
         case .nothingToTranslate: return "This track has no text to translate."
+        case let .signInRequired(m): return m
+        case .planUsageLimitReached:
+            return "You've reached your ChatGPT plan's usage limit. Sable paused the translation; finished lines are kept. Check Manage usage in ChatGPT settings, then resume later."
+        case let .planNotEligible(m): return m
         }
     }
 }

@@ -19,13 +19,18 @@ struct SubtitleOverlay: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // Read the session here, in body, so this view itself depends on the cues (not only the
+        // GeometryReader closure): a track switch must redraw at once, playing or paused.
+        let cues = session.visibleCues
+        let style = session.subtitleStyle
+        let videoSize = session.videoSize
+        let aspectMode = session.aspectMode
         GeometryReader { geo in
             let bounds = CGRect(origin: .zero, size: geo.size)
-            let picture = visiblePicture(in: bounds)
-            let style = session.subtitleStyle
+            let picture = Self.visiblePicture(in: bounds, videoSize: videoSize, aspectMode: aspectMode)
             let fontSize = SubtitleMetrics.fontSize(pictureHeight: picture.height, scale: style.scale,
                                                     dynamicType: dynamicTypeSize)
-            let groups = SubtitleGroups(cues: session.visibleCues)
+            let groups = SubtitleGroups(cues: cues)
             let bottomPadding = max(picture.height * style.bottomMargin,
                                     picture.maxY - (bounds.height - reservedBottom) + Spacing.xs, 4)
 
@@ -50,16 +55,52 @@ struct SubtitleOverlay: View {
             .padding(.horizontal, max(picture.width * 0.05, Spacing.xs))
             .frame(width: max(picture.width, 1), height: max(picture.height, 1))
             .position(x: picture.midX, y: picture.midY)
-            .animation(nil, value: session.visibleCues)
+            .animation(nil, value: cues)
         }
         .allowsHitTesting(false)
     }
 
     /// The part of the picture that is on screen (Fill extends past the view).
-    private func visiblePicture(in bounds: CGRect) -> CGRect {
-        let picture = VideoGeometry.pictureRect(videoSize: session.videoSize, mode: session.aspectMode, in: bounds)
+    private static func visiblePicture(in bounds: CGRect, videoSize: CGSize?, aspectMode: AspectMode) -> CGRect {
+        let picture = VideoGeometry.pictureRect(videoSize: videoSize, mode: aspectMode, in: bounds)
         let visible = picture.intersection(bounds)
         return visible.isNull || visible.isEmpty ? bounds : visible
+    }
+}
+
+/// Small status shown over the video while a newly selected track loads (the previous track's
+/// text is already gone). Appears only if loading takes longer than a moment, so switches served
+/// from the cache don't flash a spinner; extraction progress shows at once.
+struct SubtitleLoadingPill: View {
+    let trackTitle: String?
+    let progress: Double?
+
+    @State private var revealed = false
+
+    var body: some View {
+        let text = Self.text(trackTitle: trackTitle, progress: progress)
+        HStack(spacing: Spacing.xs) {
+            PixelSpinner(size: 14)
+            Text(text).font(Typo.callout).foregroundStyle(Palette.textPrimary).lineLimit(1)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .frame(minHeight: 32)
+        .background(Rectangle().fill(Palette.scrim))
+        .overlay(Rectangle().stroke(Palette.border, lineWidth: 1))
+        .opacity(revealed || progress != nil ? 1 : 0)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
+        .allowsHitTesting(false)
+        .task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            if !Task.isCancelled { revealed = true }
+        }
+    }
+
+    static func text(trackTitle: String?, progress: Double?) -> String {
+        if let progress { return "Extracting subtitles \(Int((progress * 100).rounded()))%" }
+        if let trackTitle, !trackTitle.isEmpty { return "Loading \(trackTitle)…" }
+        return "Loading subtitles…"
     }
 }
 
@@ -128,6 +169,7 @@ struct SubtitleBlock: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(cues.map { SubtitleMarkup.plain($0.text) }.joined(separator: "\n"))
             .accessibilityAddTraits(.isStaticText)
+            .modifier(OverlaySourceTrackValue(trackID: cues.first?.trackID))
             .modifier(OverlayOptionalIdentifier(identifier: identifier))
     }
 
@@ -162,6 +204,29 @@ struct SubtitleBlock: View {
         case 1, 4, 7: return .leading
         case 3, 6, 9: return .trailing
         default: return .center
+        }
+    }
+}
+
+/// UI-test runs only (DEBUG + `-uiTesting`): the accessibility value names the track the drawn
+/// cues come from, because an embedded track and an external file can carry identical dialogue.
+/// Release builds and normal runs (VoiceOver) never get this value.
+private struct OverlaySourceTrackValue: ViewModifier {
+    let trackID: String?
+
+    private static let isEnabled: Bool = {
+        #if DEBUG
+        return UITestSupport.isUITesting
+        #else
+        return false
+        #endif
+    }()
+
+    func body(content: Content) -> some View {
+        if Self.isEnabled, let trackID, !trackID.isEmpty {
+            content.accessibilityValue(trackID)
+        } else {
+            content
         }
     }
 }

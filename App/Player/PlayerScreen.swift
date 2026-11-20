@@ -463,19 +463,9 @@ struct PlayerContentView: View {
     private var subtitleStatusPill: some View {
         switch session.subtitleLoadState {
         case let .loading(progress):
-            let text = progress.map { "Extracting subtitles \(Int(($0 * 100).rounded()))%" } ?? "Loading subtitles…"
-            HStack(spacing: Spacing.xs) {
-                PixelSpinner(size: 14)
-                Text(text).font(Typo.callout).foregroundStyle(Palette.textPrimary)
-            }
-            .padding(.horizontal, Spacing.sm)
-            .frame(minHeight: 32)
-            .background(Rectangle().fill(Palette.scrim))
-            .overlay(Rectangle().stroke(Palette.border, lineWidth: 1))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(text)
-            .accessibilityIdentifier(AX.Player.subtitleStatus)
-            .allowsHitTesting(false)
+            // The previous track is already off screen; this says the new one is on its way.
+            SubtitleLoadingPill(trackTitle: session.loadingSubtitleTrack?.title, progress: progress)
+                .accessibilityIdentifier(AX.Player.subtitleStatus)
         case let .failed(message):
             InlineMessage(glyph: .warning, text: message, tint: Palette.danger)
                 .accessibilityIdentifier(AX.Player.subtitleStatus)

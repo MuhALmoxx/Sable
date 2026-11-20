@@ -10,10 +10,11 @@ early or late.
 - Plays the files you already have: MP4/MOV/M4V with Apple's hardware-accelerated AVFoundation
   engine, and MKV, WebM, AVI and more with an embedded VLC engine (libVLC 3).
 - Translates **a whole subtitle track at once** into Arabic that renders correctly from right to
-  left, using either free, private on-device translation or Claude with your own Anthropic key.
+  left, using free, private on-device translation, Claude with your own Anthropic key, or your
+  ChatGPT Plus or Pro plan ("Sign in with ChatGPT", an OpenAI preview).
 - Fixes subtitle timing in milliseconds, by hand or by marking one spoken line.
 
-No account, no tracking, no Sable server. MIT-licensed.
+No Sable account, no tracking, no Sable server. MIT-licensed.
 
 ---
 
@@ -66,6 +67,10 @@ No account, no tracking, no Sable server. MIT-licensed.
 - Whole-track English→Arabic translation that produces a new track with identical timing.
 - Apple on-device (free, private) or Claude (your own Anthropic key, billed to you, confirmation
   with a cost estimate before every job).
+- ChatGPT plan (OpenAI preview): **Sign in with ChatGPT** and translate with your ChatGPT Plus or
+  Pro plan. Requests count toward your ChatGPT usage limits (on Plus, the 5-hour limit is shared
+  with other apps); it is not OpenAI API access, and Sable charges nothing. A confirmation comes
+  before every job, and the usage limit offers Manage usage and Resume.
 - Chunked with context and a glossary, validated line by line, resumable after cancel or crash,
   and cached.
 - Export the Arabic track as SRT, optionally with the current offset baked in and with RTL marks.
@@ -201,6 +206,17 @@ How it works:
 - The translated track shares the source's timing, so an offset fixed on English also fixes the
   Arabic.
 
+**ChatGPT plan (OpenAI preview).** In Settings › Translation, **Sign in with ChatGPT** opens
+OpenAI's sign-in page in a browser sheet; the redirect comes back to a small receiver Sable runs on
+`127.0.0.1` on the iPhone, and the tokens are stored only in the Keychain (this device only). It
+needs an eligible ChatGPT **Plus or Pro** plan. Translations count toward your ChatGPT usage limits
+(on Plus, the 5-hour limit is shared with other apps) and may use credits if you allowed credits
+for apps in ChatGPT settings; it is **not** OpenAI API access or API billing, and Sable charges
+nothing. The model is one your account offers (the first listed until you pick another); "Using
+ChatGPT plan" and **Manage usage** are shown next to it, a confirmation comes before every job, and when the limit is reached the job keeps its
+finished lines with **Manage usage** and **Resume**. The button is a text label only; Sable bundles
+no OpenAI or ChatGPT logo.
+
 Details, including errors and the mock provider used by the tests:
 [docs/TRANSLATION.md](docs/TRANSLATION.md).
 
@@ -308,8 +324,10 @@ Manual run with simulator tests on any branch:
 and the hosted unit tests and UI journey tests on an iOS simulator. **No testing has been done on a
 physical iPhone**, so hardware decoding, Picture in Picture, background behaviour, Apple's
 on-device translation (which does not run in the Simulator; the UI tests use a mock provider) and
-installing the sideloaded IPA are unverified. No live Claude API call has been made. See
-[docs/TESTING.md](docs/TESTING.md).
+installing the sideloaded IPA are unverified. No live Claude API call has been made. **Sign in with
+ChatGPT is untested end-to-end**: no ChatGPT account or device was available, so no real sign-in or
+plan-backed translation has run (CI checks only the signed-out Settings block, the loopback
+receiver and the Keychain store). See [docs/TESTING.md](docs/TESTING.md).
 
 ## Project structure
 

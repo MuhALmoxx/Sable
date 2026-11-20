@@ -237,8 +237,8 @@ struct ToolStrip: View {
     private func value(for tool: PlayerTool) -> String? {
         switch tool {
         case .subtitles:
-            guard let active = session.activeSubtitle else { return "Off" }
-            return active.descriptor.language?.primary.uppercased() ?? "On"
+            guard let shown = session.activeSubtitle?.descriptor ?? session.loadingSubtitleTrack else { return "Off" }
+            return shown.language?.primary.uppercased() ?? "On"
         case .audio:
             guard session.audioTracks.count > 1,
                   let index = session.audioTracks.firstIndex(where: { $0.id == session.selectedAudioTrackID }) else { return nil }
@@ -256,7 +256,7 @@ struct ToolStrip: View {
 
     private func isActive(_ tool: PlayerTool) -> Bool {
         switch tool {
-        case .subtitles: return session.activeSubtitle != nil
+        case .subtitles: return session.activeSubtitle != nil || session.loadingSubtitleTrackID != nil
         case .speed: return abs(session.rate - 1) > 0.001
         case .aspect: return session.aspectMode != .fit
         case .timing: return !session.timing.isIdentity
@@ -323,6 +323,11 @@ struct PortraitPanel: View {
                     }
                     if let active = session.activeSubtitle {
                         Text(active.descriptor.title)
+                            .font(Typo.callout)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(1)
+                    } else if let loading = session.loadingSubtitleTrack {
+                        Text("Loading \(loading.title)…")
                             .font(Typo.callout)
                             .foregroundStyle(Palette.textSecondary)
                             .lineLimit(1)

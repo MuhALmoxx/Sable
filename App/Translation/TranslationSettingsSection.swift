@@ -1,7 +1,8 @@
 import SwiftUI
 import TranslationKit
 
-// OWNER: translation agent. Embedded by the Settings screen (provider choice, API key, model).
+// OWNER: translation agent. Embedded by the Settings screen (provider choice, API key, model,
+// ChatGPT plan sign-in).
 struct TranslationSettingsSection: View {
     @Environment(AppServices.self) private var services
 
@@ -14,7 +15,7 @@ struct TranslationSettingsSection: View {
                 SectionLabel("Default provider")
                 ForEach(service.providerOptions) { option in
                     TranslationChoiceRow(title: option.descriptor.displayName, detail: option.descriptor.summary,
-                                         tags: option.tags + (option.unavailableReason.map { [$0] } ?? []),
+                                         tags: option.displayTags,
                                          isSelected: services.settings.translationProviderID == option.id,
                                          isEnabled: true,
                                          accessibilityID: AX.Settings.defaultProvider(option.id)) {
@@ -44,6 +45,8 @@ struct TranslationSettingsSection: View {
                     .font(Typo.reading).foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            ChatGPTPlanSettingsBlock(service: service)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 SectionLabel("Apple on-device")

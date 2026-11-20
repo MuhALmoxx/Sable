@@ -233,6 +233,46 @@ final class SubtitleRepository {
         return document
     }
 
+    /// Starts the one-pass extraction of every embedded Matroska text track of `item` in the
+    /// background, so that switching to any of them later is instant (the pass reads the whole
+    /// file, which takes a while for a big film). Does nothing when the file isn't Matroska, has no
+    /// text tracks, a pass is already running, or an earlier pass cached the tracks. A selection
+    /// made meanwhile joins this pass (see `extractMatroska`). Uses the probe the player stored.
+    func prefetchEmbeddedText(for item: MediaItem) {
+        guard matroskaJobs[item.id] == nil, let probe = probeCache[item.id], probe.container == .matroska else { return }
+        let directory = extractionDirectory(for: item.id)
+        var numbers: Set<Int> = []
+        var alreadyExtracted = false
+        for descriptor in probe.subtitleTracks where descriptor.kind == .text {
+            guard case let .embedded(.matroska, number, _) = descriptor.origin else { continue }
+            numbers.insert(number)
+            let cacheURL = directory.appendingPathComponent(Self.cacheFileName(for: descriptor.id))
+            if memoryCache["\(item.id.uuidString)|\(descriptor.id)"] != nil
+                || FileManager.default.fileExists(atPath: cacheURL.path) {
+                alreadyExtracted = true // every pass extracts all text tracks at once
+            }
+        }
+        guard !numbers.isEmpty, !alreadyExtracted else { return }
+        let job = startMatroskaJob(url: library.mediaURL(for: item), directory: directory, numbers: numbers)
+        job.isPrefetch = true
+        matroskaJobs[item.id] = job
+        let itemID = item.id
+        Task { [weak self] in
+            _ = try? await job.task?.value
+            // Nobody joined: forget the finished pass (a waiter's own cleanup handles the rest).
+            guard let self, self.matroskaJobs[itemID] === job, job.waiters == 0 else { return }
+            self.matroskaJobs[itemID] = nil
+        }
+    }
+
+    /// Stops a background pass started by `prefetchEmbeddedText` when nobody waits for it (the
+    /// player closed first). A pass that a selection or a translation joined keeps running.
+    func cancelPrefetch(itemID: UUID) {
+        guard let job = matroskaJobs[itemID], job.isPrefetch, job.waiters == 0 else { return }
+        job.task?.cancel()
+        matroskaJobs[itemID] = nil
+    }
+
     private func startMatroskaJob(url: URL, directory: URL, numbers: Set<Int>) -> ExtractionJob {
         let job = ExtractionJob(trackNumbers: numbers)
         let relay: @Sendable (Double) -> Void = { fraction in
@@ -294,6 +334,8 @@ private final class ExtractionJob {
     var task: Task<[Int: SubtitleDocument], Error>?
     var listeners: [UUID: (Double) -> Void] = [:]
     var waiters = 0
+    /// Started by `prefetchEmbeddedText` (no caller of its own).
+    var isPrefetch = false
     private var cancelledWaiters = 0
     private var lastReported = -1.0
 

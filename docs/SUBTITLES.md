@@ -31,8 +31,9 @@ text track, otherwise none. External files are never selected automatically. Cho
 remembered as an explicit choice (`PlaybackMemory.subtitleTrackID` is `nil` for "never chosen" and
 `"off"` for "turned off").
 
-**Embedded Matroska extraction.** The first time you select a text track of an MKV/WebM file, Sable
-extracts **all** of that file's text tracks in one pass and caches each as JSON under
+**Embedded Matroska extraction.** When an MKV/WebM file whose text tracks were never extracted
+opens, Sable starts a background pass (a track selected meanwhile joins it) that extracts **all** of
+that file's text tracks in one pass and caches each as JSON under
 `Extracted/<itemID>/` (for example `emb_mkv_3.json`). Later selections, also after a relaunch, come
 from the cache. The pass reads the clusters with seeks (at most about 4 KB per skipped block) and
 never loads the whole file, but it is a linear scan without the `Cues` index, so a multi-GB file

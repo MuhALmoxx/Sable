@@ -25,6 +25,10 @@ struct DisplayCue: Identifiable, Equatable {
     let originalText: String?
     let isRightToLeft: Bool
     let style: CueStyleHint?
+    /// Track the cue was drawn from. Part of equality, so switching between two tracks that share
+    /// cue ids and text (an embedded track and an external file of the same dialogue) is always a
+    /// change for the overlay.
+    var trackID: String = ""
 }
 
 enum SubtitleLoadState: Equatable {
@@ -69,10 +73,13 @@ final class PlayerSession {
 
     /// Every subtitle track for this video: embedded (text + image), external and translated.
     private(set) var subtitleTracks: [SubtitleTrackDescriptor] = []
-    /// nil = subtitles off. Image-based tracks are "active" with an empty document (VLC draws them).
+    /// nil = subtitles off, or a newly selected track is still loading (`loadingSubtitleTrackID`):
+    /// the previous track leaves the screen the moment another one is chosen.
+    /// Image-based tracks are "active" with an empty document (VLC draws them).
     private(set) var activeSubtitle: LoadedSubtitleTrack?
     private(set) var subtitleLoadState: SubtitleLoadState = .idle
-    /// Cues visible right now (updated ~30×/s while playing and immediately after seeks/timing changes).
+    /// Cues visible right now (updated ~30×/s while playing and immediately after seeks, timing
+    /// changes and track switches, also while paused).
     private(set) var visibleCues: [DisplayCue] = []
 
     /// Timing for the active track's timing group (shared by a source track and its translations).
@@ -119,6 +126,9 @@ final class PlayerSession {
     @ObservationIgnored private var originalTextByID: [String: String] = [:]
     @ObservationIgnored private var originalDisplayTextByID: [String: String] = [:]
     @ObservationIgnored private var selectionGeneration = 0
+    /// For an installed translation: which saved version is shown (file + creation time), so a
+    /// regenerated translation is reloaded while unrelated library changes leave it alone.
+    @ObservationIgnored private var installedTranslationStamp: String?
     @ObservationIgnored private var lastPersist: CFTimeInterval = 0
     @ObservationIgnored private var lastScrubDispatch: CFTimeInterval = 0
     @ObservationIgnored private var forcedEngine: PlaybackEngineKind?
@@ -149,7 +159,12 @@ final class PlayerSession {
         isStarting = true
         let opened = await openMedia()
         isStarting = false
-        if opened { await restoreSubtitles() }
+        if opened {
+            // One background pass over a Matroska file extracts every embedded text track, so a
+            // later switch to any of them is instant (a restored embedded choice joins this pass).
+            services.subtitles.prefetchEmbeddedText(for: item)
+            await restoreSubtitles()
+        }
     }
 
     /// Probe + engine load with AVFoundation -> VLC fallback. Returns true when playing.
@@ -400,12 +415,14 @@ final class PlayerSession {
         let cues = active.index.activeCues(at: time, timing: timing)
         let languageRTL = active.descriptor.language?.isRightToLeft ?? active.document.language?.isRightToLeft
         let showOriginal = subtitleStyle.showOriginalUnderTranslation && active.originalDocument != nil
+        let trackID = active.descriptor.id
         let display = cues.map { cue in
             DisplayCue(id: cue.id,
                        text: cue.text,
                        originalText: showOriginal ? originalDisplayTextByID[cue.id] : nil,
                        isRightToLeft: languageRTL ?? TextDirection.containsRightToLeft(cue.text),
-                       style: cue.style)
+                       style: cue.style,
+                       trackID: trackID)
         }
         if display != visibleCues { visibleCues = display }
     }
@@ -513,27 +530,69 @@ final class PlayerSession {
 
     // MARK: Subtitles
 
-    /// nil turns subtitles off. Loads (extracting embedded text if needed) and persists the choice.
+    /// nil turns subtitles off. Applies the choice during playback without pausing, seeking or
+    /// restarting it: the previous track's text leaves the screen at once, and the new track is
+    /// drawn at the current position as soon as its document is ready (an embedded track may need
+    /// extracting first; `subtitleLoadState` reports that). If the new track can't be loaded, the
+    /// previous one comes back with the error in `subtitleLoadState`. Persists the choice.
     func selectSubtitleTrack(_ id: String?) async {
-        subtitleChoice = id ?? Self.subtitlesOffMarker
-        await activateSubtitle(id)
+        let previousChoice = subtitleChoice
+        let choice = id ?? Self.subtitlesOffMarker
+        subtitleChoice = choice
+        let outcome = await activateSubtitle(id)
+        if outcome == .failed, subtitleChoice == choice {
+            // The previous track is back on screen: remember that one, not the failed choice.
+            subtitleChoice = previousChoice
+        }
         persistNow()
     }
 
-    /// Re-reads the track list (after importing a file or finishing a translation).
+    /// Track whose document is loading right now (shown as soon as it is ready), nil otherwise.
+    var loadingSubtitleTrack: SubtitleTrackDescriptor? {
+        loadingSubtitleTrackID.flatMap { id in subtitleTracks.first { $0.id == id } }
+    }
+
+    /// Re-reads the track list (after importing a file or finishing a translation). Every
+    /// persistNow (pause, rate, style, track choice, leaving the app…) bumps libraryRevision and
+    /// lands here, so it leaves the shown track alone unless that track disappeared or its
+    /// translation was regenerated.
     func reloadSubtitleTracks() async {
         if let fresh = services.library.item(id: itemID) { item = fresh }
         await refreshTrackList()
-        guard let active = activeSubtitle else { return }
-        if !subtitleTracks.contains(where: { $0.id == active.descriptor.id }) {
+        // Never interfere with a selection in flight (it owns the screen until it installs).
+        guard !isTornDown, loadingSubtitleTrackID == nil, let active = activeSubtitle else { return }
+        guard let current = subtitleTracks.first(where: { $0.id == active.descriptor.id }) else {
             deactivateSubtitles()
-        } else if case .translated = active.descriptor.origin, loadingSubtitleTrackID == nil {
-            // A translation may have been regenerated under the same id: reload its document.
-            // Not while another track is loading: every persistNow (pause, rate, import…) bumps
-            // libraryRevision and lands here, and re-activating would supersede the user's
-            // in-flight selection (its result is then dropped by the generation check).
-            await activateSubtitle(active.descriptor.id)
+            return
         }
+        if case .translated = current.origin {
+            let stamp = translationStamp(for: current)
+            if stamp != installedTranslationStamp {
+                await reloadTranslationInPlace(current, stamp: stamp)
+            }
+        }
+    }
+
+    /// A translation regenerated under the same track id: swaps in the new document without
+    /// clearing the screen (same track, same timing group).
+    private func reloadTranslationInPlace(_ descriptor: SubtitleTrackDescriptor, stamp: String?) async {
+        selectionGeneration &+= 1
+        let generation = selectionGeneration
+        guard let document = try? await services.subtitles.document(for: descriptor, item: item) else { return }
+        guard generation == selectionGeneration, !isTornDown,
+              let active = activeSubtitle, active.descriptor.id == descriptor.id else { return }
+        install(LoadedSubtitleTrack(descriptor: descriptor, document: document, index: CueIndex(cues: document.cues),
+                                    originalDocument: active.originalDocument),
+                translationStamp: stamp)
+    }
+
+    /// Identifies the saved version of a translated track (nil for other tracks), looked up the
+    /// way SubtitleRepository finds the translation's file.
+    private func translationStamp(for descriptor: SubtitleTrackDescriptor) -> String? {
+        guard case .translated = descriptor.origin else { return nil }
+        let refs = item.translatedSubtitles + (services.library.item(id: itemID)?.translatedSubtitles ?? [])
+        guard let ref = refs.first(where: { $0.id == descriptor.id }) else { return nil }
+        return "\(ref.fileName)|\(ref.createdAt.timeIntervalSince1970)"
     }
 
     /// Imports an external SRT/VTT/ASS/SSA file for this video and selects it.
@@ -569,7 +628,7 @@ final class PlayerSession {
 
     private func refreshTrackList() async {
         let tracks = await services.subtitles.tracks(for: item)
-        guard !isTornDown else { return }
+        guard !isTornDown, tracks != subtitleTracks else { return }
         subtitleTracks = tracks
     }
 
@@ -600,21 +659,47 @@ final class PlayerSession {
             ?? embedded.first { $0.language?.primary == "en" && !$0.isForced }
     }
 
-    private func activateSubtitle(_ id: String?) async {
+    private enum ActivationOutcome {
+        case activated
+        /// The track couldn't be loaded (the previous one, if any, is shown again).
+        case failed
+        /// A newer selection took over, the load was cancelled, or the session closed.
+        case superseded
+    }
+
+    /// Makes `id` the shown track (nil = off). Text of the previous track is taken off screen
+    /// before the new document is awaited: loading can take long (an embedded Matroska track is
+    /// extracted from the whole file the first time), and the old text must never stay up looking
+    /// like the new choice. Once loaded, the track is drawn at the current playback position.
+    @discardableResult
+    private func activateSubtitle(_ id: String?) async -> ActivationOutcome {
         selectionGeneration &+= 1
         let generation = selectionGeneration
         guard let id else {
             deactivateSubtitles()
-            return
+            return .activated
         }
-        guard let descriptor = subtitleTracks.first(where: { $0.id == id }) else {
+        var listed = subtitleTracks.first(where: { $0.id == id })
+        if listed == nil {
+            // e.g. a translation or import saved a moment ago that this session hasn't listed yet
+            // ("Show Arabic" right after a job): re-read the list once instead of failing.
+            if let fresh = services.library.item(id: itemID) { item = fresh }
+            await refreshTrackList()
+            guard generation == selectionGeneration, !isTornDown else { return .superseded }
+            listed = subtitleTracks.first(where: { $0.id == id })
+        }
+        guard let descriptor = listed else {
             subtitleLoadState = .failed("That subtitle track is no longer available.")
-            return
+            return .failed
         }
         if descriptor.kind == .image {
             activateImageTrack(descriptor)
-            return
+            return .activated
         }
+        let previous = activeSubtitle
+        let previousStamp = installedTranslationStamp
+        let stamp = translationStamp(for: descriptor)
+        clearShownSubtitle()
         loadingSubtitleTrackID = id
         subtitleLoadState = .loading(progress: nil)
         do {
@@ -624,41 +709,66 @@ final class PlayerSession {
             }
             var original: SubtitleDocument?
             if case let .translated(sourceTrackID, _, _) = descriptor.origin {
-                original = try? await self.document(for: sourceTrackID)
+                if let previous, previous.descriptor.id == sourceTrackID, previous.descriptor.kind == .text {
+                    original = previous.document
+                } else {
+                    original = try? await self.document(for: sourceTrackID)
+                }
             }
-            guard generation == selectionGeneration, !isTornDown else { return }
+            guard generation == selectionGeneration, !isTornDown else { return .superseded }
             install(LoadedSubtitleTrack(descriptor: descriptor, document: loadedDocument,
-                                        index: CueIndex(cues: loadedDocument.cues), originalDocument: original))
+                                        index: CueIndex(cues: loadedDocument.cues), originalDocument: original),
+                    translationStamp: stamp)
             subtitleLoadState = .idle
+            return .activated
         } catch {
-            guard generation == selectionGeneration else { return }
+            guard generation == selectionGeneration, !isTornDown else { return .superseded }
             loadingSubtitleTrackID = nil
             if error is CancellationError || (error as? SubtitleError) == .cancelled {
                 subtitleLoadState = .idle
-            } else {
-                subtitleLoadState = .failed(readableMessage(for: error))
+                return .superseded
             }
+            if let previous { install(previous, translationStamp: previousStamp) }
+            subtitleLoadState = .failed(readableMessage(for: error))
+            return .failed
         }
     }
 
-    private func install(_ loaded: LoadedSubtitleTrack) {
+    /// Shows `loaded` right away: timing of its group, VLC's native renderer (image tracks only)
+    /// and the cues at the current playback position, also while paused (the display link that
+    /// refreshes the cues only runs during playback).
+    private func install(_ loaded: LoadedSubtitleTrack, translationStamp stamp: String? = nil) {
         activeSubtitle = loaded
         loadingSubtitleTrackID = nil
+        installedTranslationStamp = stamp
         let originalCues = loaded.originalDocument?.cues ?? []
         originalTextByID = Dictionary(originalCues.map { ($0.id, $0.plainText) }, uniquingKeysWith: { first, _ in first })
         originalDisplayTextByID = Dictionary(originalCues.map { ($0.id, $0.text) }, uniquingKeysWith: { first, _ in first })
         loadTiming(for: loaded.descriptor)
-        engine?.setNativeSubtitle(streamOrdinal: nil, delay: 0)
-        refreshVisibleCues()
+        applyNativeSubtitleSelection()
+        if engine != nil {
+            refreshTime()   // reads the engine clock now, then the cues at that position
+        } else {
+            refreshVisibleCues()
+        }
+    }
+
+    /// VLC draws only image-based tracks; text is always drawn by Sable (engines are told to
+    /// render nothing for it).
+    private func applyNativeSubtitleSelection() {
+        if let active = activeSubtitle, active.descriptor.kind == .image, engineKind == .vlc,
+           let ordinal = nativeOrdinal(for: active.descriptor) {
+            engine?.setNativeSubtitle(streamOrdinal: ordinal, delay: timing.offset)
+        } else {
+            engine?.setNativeSubtitle(streamOrdinal: nil, delay: 0)
+        }
     }
 
     private func activateImageTrack(_ descriptor: SubtitleTrackDescriptor) {
         let empty = SubtitleDocument(format: .unknown, cues: [], language: descriptor.language, title: descriptor.title)
         install(LoadedSubtitleTrack(descriptor: descriptor, document: empty, index: CueIndex(cues: []), originalDocument: nil))
         subtitleLoadState = .idle
-        if engineKind == .vlc, let ordinal = nativeOrdinal(for: descriptor) {
-            engine?.setNativeSubtitle(streamOrdinal: ordinal, delay: timing.offset)
-        } else {
+        if engineKind != .vlc || nativeOrdinal(for: descriptor) == nil {
             showNotice("“\(descriptor.title)” is an image-based track (\(SubtitleRepository.imageCodecLabel(descriptor))). Only the VLC engine can display it — turn on “Use VLC engine for every file” in Settings (or reopen this video with VLC from the More menu).")
         }
     }
@@ -673,9 +783,16 @@ final class PlayerSession {
     }
 
     private func deactivateSubtitles() {
-        activeSubtitle = nil
+        clearShownSubtitle()
         loadingSubtitleTrackID = nil
         subtitleLoadState = .idle
+    }
+
+    /// Takes the active track off screen at once (Sable's overlay and VLC's native renderer)
+    /// without touching the load state.
+    private func clearShownSubtitle() {
+        activeSubtitle = nil
+        installedTranslationStamp = nil
         originalTextByID = [:]
         originalDisplayTextByID = [:]
         timing = .identity
@@ -820,6 +937,9 @@ final class PlayerSession {
         persistNow()
         isTornDown = true
         selectionGeneration &+= 1
+        // A background extraction nobody is waiting for stops with the player (it restarts on the
+        // next open); one a selection or a translation joined keeps running and caches its result.
+        services.subtitles.cancelPrefetch(itemID: itemID)
         noticeTask?.cancel()
         displayLink?.invalidate()
         displayLink = nil

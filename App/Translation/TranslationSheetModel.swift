@@ -40,6 +40,8 @@ final class TranslationSheetModel {
     private(set) var preparation: TranslationPreparation? = nil
     var confirming = false
     var showingKeyEntry = false
+    /// The one-time "You're using your ChatGPT plan" notice is on screen.
+    private(set) var showingPlanNotice = false
     /// The user asked to translate again although an Arabic track exists.
     private(set) var wantsNewTranslation = false
 
@@ -135,10 +137,10 @@ final class TranslationSheetModel {
         return existingPreview
     }
 
-    /// A paid job needs confirmation unless the user already confirmed this exact job in this
-    /// app session (retry/resume after an error or cancel).
+    /// A paid or plan-backed (ChatGPT) job needs confirmation unless the user already confirmed
+    /// this exact job in this app session (retry/resume after an error or cancel).
     var needsConfirmation: Bool {
-        guard descriptor.isPaid else { return false }
+        guard descriptor.isPaid || descriptor.usesSubscriptionAllowance else { return false }
         guard let job else { return true }
         return job.providerID != providerID || job.modelID != service.modelID(for: providerID)
     }
@@ -156,6 +158,7 @@ final class TranslationSheetModel {
         }
         if !service.providerOptions.contains(where: { $0.id == providerID }) { providerID = service.preferredProviderID }
         reload()
+        showPlanNoticeIfNeeded()
         await service.refreshAppleAvailability()
         if !service.providerOptions.contains(where: { $0.id == providerID }) { providerID = service.preferredProviderID }
     }
@@ -179,10 +182,33 @@ final class TranslationSheetModel {
             showingKeyEntry = true
             return
         }
+        // Signed out (or no model yet): the row explains that sign-in happens in Settings.
+        if !option.isAvailable, id == ChatGPTPlan.providerID { return }
         guard id != providerID else { return }
         providerID = id
         confirming = false
+        showPlanNoticeIfNeeded()
         Task { await refreshPreparation() }
+    }
+
+    func selectChatGPTModel(_ slug: String) {
+        guard service.settings.chatGPTModelID != slug else { return }
+        service.settings.chatGPTModelID = slug
+        confirming = false
+        Task { await refreshPreparation() }
+    }
+
+    /// Shows the ChatGPT plan notice the first time the plan provider is in use (exactly once:
+    /// the flag is saved as soon as it is shown).
+    func showPlanNoticeIfNeeded() {
+        guard providerID == ChatGPTPlan.providerID, providerOption?.isAvailable == true,
+              !service.settings.chatGPTPlanNoticeShown else { return }
+        service.settings.chatGPTPlanNoticeShown = true
+        showingPlanNotice = true
+    }
+
+    func dismissPlanNotice() {
+        showingPlanNotice = false
     }
 
     func selectClaudeModel(_ modelID: String) {
@@ -242,6 +268,7 @@ final class TranslationSheetModel {
     /// The big button: start, resume, or (paid) show the confirmation first.
     func primaryAction() {
         guard let spec, let key = jobKey else { return }
+        if showingPlanNotice { return }
         if providerOption?.isAvailable == false {
             if providerID == ClaudeTranslationProvider.providerID { showingKeyEntry = true }
             return

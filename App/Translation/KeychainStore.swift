@@ -4,7 +4,8 @@ import Security
 // OWNER: translation agent.
 /// Generic-password Keychain wrapper (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly).
 /// Values never leave the device (no iCloud Keychain sync) and are never logged.
-final class KeychainStore {
+/// Immutable (only `service`), and the Security calls are thread-safe, so it is Sendable.
+final class KeychainStore: Sendable {
     let service: String
 
     init(service: String) {
@@ -33,19 +34,28 @@ final class KeychainStore {
     }
 
     func string(for account: String) -> String? {
+        data(for: account).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// Update-or-add.
+    func set(_ value: String, for account: String) throws {
+        try setData(Data(value.utf8), for: account)
+    }
+
+    func data(for account: String) -> Data? {
         var query = baseQuery(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        return data
     }
 
     /// Update-or-add.
-    func set(_ value: String, for account: String) throws {
+    func setData(_ value: Data, for account: String) throws {
         let attributes: [String: Any] = [
-            kSecValueData as String: Data(value.utf8),
+            kSecValueData as String: value,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         let status = SecItemUpdate(baseQuery(account) as CFDictionary, attributes as CFDictionary)

@@ -342,6 +342,11 @@ final class AVFoundationEngine: NSObject, PlaybackEngine {
 
     func setNativeSubtitle(streamOrdinal: Int?, delay: TimeInterval) {
         // AVFoundation cannot render image-based tracks for Sable; the session shows a notice.
+        // Every track change lands here: make sure AVPlayerLayer isn't drawing a legible option
+        // of its own over Sable's overlay (only deselect when something is selected).
+        guard let item, let legibleGroup,
+              item.currentMediaSelection.selectedMediaOption(in: legibleGroup) != nil else { return }
+        item.select(nil, in: legibleGroup)
     }
 
     func shutdown() {

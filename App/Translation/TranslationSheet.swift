@@ -6,6 +6,7 @@ import TranslationKit
 struct TranslationSheet: View {
     let session: PlayerSession
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var model: TranslationSheetModel
 
     init(session: PlayerSession) {
@@ -27,6 +28,11 @@ struct TranslationSheet: View {
             }
             .scrollIndicators(.hidden)
         }
+        .overlay {
+            if model.showingPlanNotice {
+                ChatGPTPlanNotice { model.dismissPlanNotice() }
+            }
+        }
         .modifier(AppleTranslationHost(broker: model.service.appleBroker))
         .task { await model.onAppear() }
         .onDisappear { model.service.pauseOnDeviceJobs() }
@@ -35,6 +41,11 @@ struct TranslationSheet: View {
         }
         .onChange(of: session.subtitleTracks) { _, _ in
             if model.selectedTrack == nil { Task { await model.onAppear() } }
+        }
+        .onChange(of: model.service.modelID(for: model.providerID)) { _, _ in
+            // e.g. the ChatGPT model list arrived: the job key (and estimate) depend on the model.
+            model.confirming = false
+            Task { await model.refreshPreparation() }
         }
         .sheet(isPresented: Bindable(model).showingKeyEntry) {
             ClaudeKeySheet(service: model.service, onSaved: { model.keySaved() })
@@ -133,11 +144,18 @@ struct TranslationSheet: View {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     TranslationChoiceRow(title: option.descriptor.displayName,
                                          detail: option.descriptor.summary,
-                                         tags: option.tags + (option.unavailableReason.map { [$0] } ?? []),
+                                         tags: option.displayTags,
                                          isSelected: option.id == model.providerID && option.isAvailable,
                                          isEnabled: !isBusy,
                                          accessibilityID: AX.Translation.provider(option.id)) {
                         model.selectProvider(option.id)
+                    }
+                    if option.id == ChatGPTPlan.providerID, let reason = option.unavailableReason {
+                        Text(reason + (reason.hasSuffix("…") || reason.hasSuffix(".") ? "" : "."))
+                            .font(Typo.reading).foregroundStyle(Palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, Spacing.xxs)
+                            .accessibilityIdentifier(AX.ChatGPT.unavailableReason)
                     }
                     if option.id == ClaudeTranslationProvider.providerID, !option.isAvailable {
                         Button { model.showingKeyEntry = true } label: {
@@ -155,6 +173,13 @@ struct TranslationSheet: View {
             }
             if model.providerID == ClaudeTranslationProvider.providerID, model.providerOption?.isAvailable == true {
                 claudeModelMenu
+            }
+            if model.providerID == ChatGPTPlan.providerID, model.providerOption?.isAvailable == true {
+                ChatGPTModelMenu(models: model.service.chatGPT.models,
+                                 selectedID: model.service.chatGPTModelID,
+                                 selectedName: model.service.chatGPTModelName,
+                                 isEnabled: !isBusy) { model.selectChatGPTModel($0) }
+                ChatGPTUsageIndicator()
             }
         }
         .accessibilityElement(children: .contain)
@@ -287,6 +312,8 @@ struct TranslationSheet: View {
             switch model.providerID {
             case ClaudeTranslationProvider.providerID:
                 Text("The subtitle text of this track is sent to Anthropic with your API key and billed to your Anthropic account. Nothing is sent until you confirm.")
+            case ChatGPTPlan.providerID:
+                Text("The subtitle text of this track is sent to OpenAI with your ChatGPT sign-in and counts toward your ChatGPT plan's usage limits. Sable charges nothing. Nothing is sent until you confirm.")
             case AppleTranslationProvider.providerID:
                 Text("Runs on this iPhone; nothing leaves the device. Keep this sheet open while it works — closing it pauses the job and keeps finished lines.")
             default:
@@ -298,7 +325,45 @@ struct TranslationSheet: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func confirmationPanel(_ estimate: CostEstimate) -> some View {
+    @ViewBuilder private func confirmationPanel(_ estimate: CostEstimate) -> some View {
+        if model.descriptor.usesSubscriptionAllowance {
+            planConfirmationPanel(estimate)
+        } else {
+            paidConfirmationPanel(estimate)
+        }
+    }
+
+    /// ChatGPT plan: no price, but the person confirms that the job uses their plan's limits.
+    private func planConfirmationPanel(_ estimate: CostEstimate) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionLabel("Confirm ChatGPT plan usage")
+            Text("\(model.descriptor.displayName) · \(model.service.chatGPTModelName)")
+                .font(Typo.callout).foregroundStyle(Palette.textPrimary)
+            VStack(spacing: Spacing.xxs) {
+                TranslationFactRow(label: "Lines to translate", value: "\(estimate.cueCount)")
+                TranslationFactRow(label: "Requests", value: "\(estimate.requestCount)")
+            }
+            Text("These requests count toward your ChatGPT plan's usage limits (on Plus, the 5-hour limit is shared with other apps). If you have allowed credits for apps in your ChatGPT settings, they may use credits. Sable itself charges nothing, and this is not OpenAI API usage. You can cancel at any time and keep finished lines.")
+                .font(Typo.reading).foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(AX.ChatGPT.confirmation)
+            HStack(spacing: Spacing.sm) {
+                Button("Not now") { model.cancelConfirmation() }
+                    .buttonStyle(PixelButtonStyle(kind: .secondary))
+                    .accessibilityIdentifier(AX.Translation.cancelConfirm)
+                Button { model.primaryAction() } label: {
+                    Text("Confirm and translate").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PixelButtonStyle(kind: .primary))
+                .accessibilityHint("Starts the translation using your ChatGPT plan.")
+                .accessibilityIdentifier(AX.Translation.confirmPaid)
+            }
+        }
+        .padding(Spacing.sm)
+        .pixelPanel(fill: Palette.surface, border: Palette.borderStrong)
+    }
+
+    private func paidConfirmationPanel(_ estimate: CostEstimate) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             SectionLabel("Confirm paid translation")
             if model.providerID == ClaudeTranslationProvider.providerID, let option = model.selectedModel {
@@ -368,28 +433,65 @@ struct TranslationSheet: View {
 
     private func failedView(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            TranslationBanner(glyph: .warning, message: message, accessibilityID: AX.Translation.error) {
-                HStack(spacing: Spacing.sm) {
-                    Button { model.primaryAction() } label: {
-                        Label { Text("Retry") } icon: { PixelIcon(.reset, size: 16) }
-                    }
-                    .buttonStyle(PixelButtonStyle(kind: .primary, compact: true))
-                    .frame(minHeight: Spacing.touch)
-                    .accessibilityIdentifier(AX.Translation.retry)
-                    if model.job?.needsSettings == true, model.providerID == ClaudeTranslationProvider.providerID {
-                        Button("API key") { model.showingKeyEntry = true }
-                            .buttonStyle(PixelButtonStyle(kind: .secondary, compact: true))
-                            .frame(minHeight: Spacing.touch)
-                            .accessibilityIdentifier(AX.Translation.addAPIKey)
-                    }
-                }
+            if model.job?.planLimitReached == true {
+                planLimitBanner(message)
+            } else {
+                failureBanner(message)
             }
             if let progress = model.job?.progress, progress.completedCues > 0 {
-                Text("\(progress.completedCues) of \(progress.totalCues) lines are saved; Retry continues from there.")
+                Text("\(progress.completedCues) of \(progress.totalCues) lines are saved; \(model.job?.planLimitReached == true ? "Resume" : "Retry") continues from there.")
                     .font(Typo.reading).foregroundStyle(Palette.textSecondary)
             }
             if model.confirming, let estimate = model.preparation?.estimate {
                 confirmationPanel(estimate)
+            }
+        }
+    }
+
+    /// ChatGPT plan usage limit: Manage usage first (no guessed reset time), Resume later.
+    private func planLimitBanner(_ message: String) -> some View {
+        TranslationBanner(glyph: .warning, message: message, tint: Palette.textSecondary, accessibilityID: AX.Translation.error) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Spacing.sm) { planLimitActions }
+                VStack(alignment: .leading, spacing: Spacing.xs) { planLimitActions }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AX.ChatGPT.limitReached)
+    }
+
+    @ViewBuilder private var planLimitActions: some View {
+        Button { openURL(ChatGPTPlan.manageUsageURL) } label: {
+            Label { Text("Manage usage") } icon: { PixelIcon(.export, size: 16) }
+        }
+        .buttonStyle(PixelButtonStyle(kind: .primary, compact: true))
+        .frame(minHeight: Spacing.touch)
+        .accessibilityHint("Opens your ChatGPT usage settings in the browser.")
+        .accessibilityIdentifier(AX.ChatGPT.manageUsage)
+        Button { model.primaryAction() } label: {
+            Label { Text("Resume") } icon: { PixelIcon(.play, size: 16) }
+        }
+        .buttonStyle(PixelButtonStyle(kind: .secondary, compact: true))
+        .frame(minHeight: Spacing.touch)
+        .accessibilityHint("Continues from the saved lines.")
+        .accessibilityIdentifier(AX.Translation.resume)
+    }
+
+    private func failureBanner(_ message: String) -> some View {
+        TranslationBanner(glyph: .warning, message: message, accessibilityID: AX.Translation.error) {
+            HStack(spacing: Spacing.sm) {
+                Button { model.primaryAction() } label: {
+                    Label { Text("Retry") } icon: { PixelIcon(.reset, size: 16) }
+                }
+                .buttonStyle(PixelButtonStyle(kind: .primary, compact: true))
+                .frame(minHeight: Spacing.touch)
+                .accessibilityIdentifier(AX.Translation.retry)
+                if model.job?.needsSettings == true, model.providerID == ClaudeTranslationProvider.providerID {
+                    Button("API key") { model.showingKeyEntry = true }
+                        .buttonStyle(PixelButtonStyle(kind: .secondary, compact: true))
+                        .frame(minHeight: Spacing.touch)
+                        .accessibilityIdentifier(AX.Translation.addAPIKey)
+                }
             }
         }
     }

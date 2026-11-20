@@ -38,6 +38,7 @@ struct TrackSheet: View {
 
     private var summary: String {
         if let active = session.activeSubtitle { return "Showing: \(active.descriptor.title)" }
+        if let loading = session.loadingSubtitleTrack { return "Loading: \(loading.title)" }
         return "Subtitles are off"
     }
 

@@ -72,6 +72,10 @@ with the exact diff; the integrator applies it. Adding new files inside your own
   When one is selected, `PlayerSession.activeSubtitle` holds it with an EMPTY document (VLC draws it);
   Sync/Translation must check `activeSubtitle?.descriptor.kind == .text` before using its cues.
 - `PlaybackMemory.subtitleTrackID`: nil = never chosen (auto default), "off" = explicitly off.
+- Switching subtitle tracks (`PlayerSession.selectSubtitleTrack`) never pauses or seeks. The previous
+  track leaves the screen at once: while the new document loads, `activeSubtitle` is nil and
+  `loadingSubtitleTrackID` names the track; once loaded it is drawn at the current position. A failed
+  load puts the previous track back and reports the error in `subtitleLoadState`.
 - Translation never mutates the source track; it produces a new track with identical cue ids/timestamps.
 - Paid providers never run without an explicit confirmation sheet showing cue count and estimated tokens.
   API keys live only in the Keychain (`KeychainStore`), never in code, logs or UserDefaults.

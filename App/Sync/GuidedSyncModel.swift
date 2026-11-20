@@ -236,6 +236,10 @@ final class GuidedSyncModel {
 
     /// Called when the active subtitle track changes while the flow is open.
     func activeTrackChanged() {
+        // A switch takes the previous track off screen before the new one has loaded
+        // (`activeSubtitle` is nil meanwhile): wait for the new track rather than restarting the
+        // flow for that gap (English <-> Arabic must keep going on the same timing group).
+        if session.activeSubtitle == nil, session.loadingSubtitleTrackID != nil { return }
         let newTrackID = track?.descriptor.id
         let newGroupID = track?.descriptor.timingGroupID
         guard newTrackID != trackID || newGroupID != groupID else { return }

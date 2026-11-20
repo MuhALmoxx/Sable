@@ -80,6 +80,120 @@ applies to the Arabic one, and the other way round (see SYNC.md).
 - Only subtitle **text** is sent: the chunk's lines, context lines and glossary entries. No video,
   audio or file names.
 
+### ChatGPT plan (OpenAI preview)
+
+Protocol layer in `TranslationKit` (`ChatGPTPlan*.swift`, `ChatGPTAuth.swift`,
+`ChatGPTProvider.swift`); the app's sign-in and usage UI is described separately. It follows
+OpenAI's "ChatGPT plan usage" rules for open-source apps (preview).
+
+- **What it is.** Eligible ChatGPT **Plus or Pro** users sign in with ChatGPT, and requests count
+  against their ChatGPT plan's usage limits (for Plus, one five-hour total shared with every other
+  app). It is not OpenAI API access and not API billing, so the descriptor sets
+  `usesSubscriptionAllowance` (the UI discloses it and asks before a job) and `isPaid` is false.
+- **Sign-in.** OAuth authorization code with PKCE (S256) in the system browser:
+  `GET https://auth.openai.com/api/accounts/authorize` with `client_id=dynamic_agent_client` and
+  `agent_name_hint=Sable` on the first registration, then the issued client id (from the callback's
+  `client_id`) on every later sign-in, with `id_token_hint`/`login_hint` when known and
+  `prompt=consent` after a decline. Every attempt has a fresh `state`, `nonce` and verifier. The
+  per-installation `ext_agent_host_id` is `urn:uuid:<UUIDv4>` (`ChatGPTPlan.newHostID()`), and the
+  redirect is `http://127.0.0.1:<port>/auth/callback`: never `localhost`, only the port may vary.
+  `error=access_denied` stops the attempt. There is no client secret.
+- **Tokens.** `POST /api/accounts/oauth/token` (form-encoded, `resource=https://api.openai.com/v1`).
+  The ID token's claims are validated (issuer, audience contains the client id, expiry, nonce, and
+  on refresh the same subject). Its signature is not checked: the token comes straight from the
+  token endpoint over TLS (OIDC Core 3.1.3.7). Access tokens last about 1 h and are refreshed
+  within 5 min of expiry (not before `earliest_refresh_at`). Every refresh returns a **replacement**
+  refresh token. `ChatGPTTokenProvider` runs one refresh at a time (concurrent callers share it)
+  and saves the new pair through the app's Keychain store before using it. Terminal refresh errors
+  (`invalid_grant`, `refresh_token_expired`/`_reused`/`_invalidated`, …) delete the tokens and ask
+  for a new sign-in. Network errors keep them.
+- **Sign-out** deletes the local tokens, keeps the account/client-id mapping, and then revokes the
+  refresh token at the discovery document's `revocation_endpoint`, retrying network and 5xx
+  errors twice. A failed revocation is reported in `lastRevocationError`.
+- **Models.** `GET /v1/models` with the bearer token, keeping entries with `visibility == "list"`
+  (`slug` is the id, `display_name` the label). TranslationKit has no built-in default model: the
+  app uses the model the user picked, else the first one the signed-in account lists.
+- **Request.** `POST https://api.openai.com/v1/responses` with `stream: true`, `store: false`, the
+  same translator brief and Arabic guide as Claude in `instructions` (no `system` role), one user
+  `input_text` with the JSON payload, and `text.format` set to the same JSON schema (strict). If the
+  server rejects that field (`subscription_sharing_unsupported_capability` with `param` "text…"),
+  Sable retries once without it (JSON described in the instructions only) and keeps that setting
+  for the rest of the provider's lifetime. The server never receives `temperature`, `top_p`,
+  `max_output_tokens`, `metadata`, `user`, `previous_response_id` or the other forbidden fields.
+  The event stream is buffered: `response.output_text.delta` texts are joined, and a chunk counts
+  as done only after `response.completed`. 40 lines per request, with context, as for Claude.
+- **Errors.** A 401 (or `subscription_sharing_invalid_user`) forces one refresh and one retry;
+  after that the job stops with "Sign in with ChatGPT again in Settings › Translation." A 429 or
+  `subscription_sharing_usage_limit_exceeded` stops the job with `planUsageLimitReached` (no
+  retry and no guessed reset time; the app links to Manage usage). `…_user_not_eligible` gives
+  `planNotEligible` (Plus or Pro is required). The engine retries `…_usage_unavailable`,
+  `…_user_unavailable` and 503 with its usual backoff. `…_route_not_supported`, `chatpass_v2_*` and
+  403 policy or region errors stop with an explanation. In every stopped case the checkpoint is
+  kept, so **Resume** continues later. Tokens never appear in error messages or descriptions.
+- **Not verified live.** No real sign-in or plan-backed request has been made yet (preview). The
+  package tests (`ChatGPTAuthTests`, `ChatGPTProviderTests`) cover the protocol against a fake
+  HTTP client, and the exact shape of `/v1/models` and `earliest_refresh_at` is parsed leniently.
+
+#### ChatGPT plan in the app (sign-in and usage UI)
+
+App side: `App/Translation/ChatGPT*.swift` (account service, loopback receiver, Keychain store,
+views) plus the provider wiring in `TranslationService`.
+
+- **Settings › Translation › ChatGPT plan** (tagged *OpenAI preview*). Signed out it explains:
+  "Use your ChatGPT Plus or Pro plan instead of an API key. Translations count toward your ChatGPT
+  usage limits (on Plus, the 5-hour limit is shared with other apps). This is not OpenAI API access;
+  Sable never sees your password." It states that Sable is free and that an eligible Plus or Pro
+  plan is required, and offers **Sign in with ChatGPT**. While the browser is open it shows
+  progress and **Cancel**; errors (for example a declined consent) appear inline. Signed in it shows
+  "Signed in as <email>", the **model** picker (`display_name` shown, `slug` stored in
+  `settings.chatGPTModel`), "Using ChatGPT plan" with a **Manage usage** link
+  (`https://chatgpt.com/settings/usage`) and **Sign out**.
+- **Model.** Until one is picked, jobs use the first model the account lists; a saved choice that
+  the account no longer lists falls back to the first listed model. Without any model the provider
+  is unavailable ("No ChatGPT model is available to this account").
+- **Translate sheet.** The provider row "ChatGPT plan" is tagged *Plus or Pro* and *Preview*.
+  Signed out it is unavailable with "Sign in with ChatGPT in Settings › Translation". Selected, it
+  shows the model picker and "Using ChatGPT plan · Manage usage". The first time it is used, a
+  notice appears once: "You're using your ChatGPT plan" / "Eligible usage in this app uses your
+  ChatGPT plan. Manage usage in your ChatGPT settings." / **Got it** (remembered in
+  `settings.chatGPTPlanNoticeShown`).
+- **Confirmation.** Like a paid job, every new plan-backed job (and every change of model) needs an
+  explicit **Confirm and translate** that shows the lines and requests and says that the requests
+  count toward the ChatGPT plan's usage limits, may use credits if the person allowed credits for
+  apps in ChatGPT settings, and that Sable charges nothing. It never claims that the plan includes
+  API usage.
+- **Usage limit reached.** The job stops with its checkpoint; the banner's primary action is
+  **Manage usage**, with **Resume** next to it. No reset time is shown. Other running plan-backed
+  jobs are paused (checkpoints kept). **Not eligible** explains that Plus or Pro is required.
+  **Sign-in ended** (terminal refresh error or confirmed revocation) clears the tokens, shows the
+  signed-out block with "Your ChatGPT sign-in has ended…" and the job says to sign in again, then
+  Resume.
+- **Sign-in on the iPhone.** Sable starts a receiver on `127.0.0.1` (port 1455, or one the OS
+  assigns when 1455 is busy; bound to the loopback interface only, no port sharing), builds the
+  authorize request for `http://127.0.0.1:<port>/auth/callback` and opens it with
+  `ASWebAuthenticationSession` (no callback URL scheme, not ephemeral, so the browser's ChatGPT
+  login can be reused). The receiver answers only `GET /auth/callback` with this attempt's `state`
+  (other paths 404, other methods 405, a foreign `state` 400), replies with a small black page
+  ("Signed in. You can return to Sable.") and `Connection: close`, hands the query to the app once
+  and stops; it also stops when the attempt is cancelled or after 10 minutes. Sable then closes the
+  browser sheet, exchanges the code and saves the tokens. Closing the browser first returns to
+  signed out without a message. OpenAI's docs describe this loopback flow for locally hosted apps
+  and do not mention iOS specifically; Sable runs the documented receiver on the device itself.
+  Loopback traffic is not subject to iOS local-network privacy, so no Info.plist key is added.
+- **Storage.** Keychain items (service `com.murisixz.sable`, the same as the Claude key,
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`): `chatgpt-plan-credential` (tokens and
+  identity, deleted on sign-out), `chatgpt-plan-account` (issued client id, email, subject; kept on
+  sign-out so the next sign-in reuses the client id) and `chatgpt-plan-host-id` (the
+  `ext_agent_host_id`, created once before the first sign-in). Tokens are never written to
+  UserDefaults, files or logs. The `-uiTesting` reset deletes every item of the service, these
+  included.
+- **Branding.** OpenAI asks for its approved branding and assets. Sable bundles none, so the button
+  is the text label "Sign in with ChatGPT" in Sable's own pixel style; no ChatGPT or OpenAI logo is
+  drawn or imitated.
+- **Not verified end-to-end.** No ChatGPT account or device was available during development or in
+  CI. The UI test only checks the signed-out block (the button is never tapped); hosted unit tests
+  cover the Keychain store and the loopback receiver.
+
 ### Mock provider (tests only)
 
 DEBUG builds launched with `-mockTranslation` (UI tests) get an offline, deterministic provider. It

@@ -25,6 +25,8 @@ final class AppSettings {
         }
         translationProviderID = defaults.string(forKey: Keys.provider) ?? "apple-on-device"
         claudeModelID = defaults.string(forKey: Keys.claudeModel) ?? "claude-opus-5-5"
+        chatGPTModelID = defaults.string(forKey: Keys.chatGPTModel) ?? ""
+        chatGPTPlanNoticeShown = defaults.object(forKey: Keys.chatGPTPlanNotice) as? Bool ?? false
         librarySortRaw = defaults.string(forKey: Keys.sort) ?? LibrarySort.recentlyAdded.rawValue
         preferVLCForAll = defaults.object(forKey: Keys.vlcAll) as? Bool ?? false
         libraryUsesGrid = defaults.object(forKey: Keys.grid) as? Bool ?? false
@@ -40,6 +42,10 @@ final class AppSettings {
     }
     var translationProviderID: String { didSet { defaults.set(translationProviderID, forKey: Keys.provider) } }
     var claudeModelID: String { didSet { defaults.set(claudeModelID, forKey: Keys.claudeModel) } }
+    /// ChatGPT plan model slug chosen by the person; empty = the first model the account lists.
+    var chatGPTModelID: String { didSet { defaults.set(chatGPTModelID, forKey: Keys.chatGPTModel) } }
+    /// The one-time "You're using your ChatGPT plan" notice has been shown.
+    var chatGPTPlanNoticeShown: Bool { didSet { defaults.set(chatGPTPlanNoticeShown, forKey: Keys.chatGPTPlanNotice) } }
     var librarySortRaw: String { didSet { defaults.set(librarySortRaw, forKey: Keys.sort) } }
     var librarySort: LibrarySort {
         get { LibrarySort(rawValue: librarySortRaw) ?? .recentlyAdded }
@@ -64,6 +70,8 @@ final class AppSettings {
         static let style = "settings.subtitleStyle"
         static let provider = "settings.translationProvider"
         static let claudeModel = "settings.claudeModel"
+        static let chatGPTModel = "settings.chatGPTModel"
+        static let chatGPTPlanNotice = "settings.chatGPTPlanNoticeShown"
         static let sort = "settings.librarySort"
         static let vlcAll = "settings.preferVLC"
         static let grid = "settings.libraryGrid"
