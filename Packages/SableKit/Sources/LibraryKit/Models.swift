@@ -149,8 +149,3 @@ public enum LibrarySort: String, Codable, Hashable, Sendable, CaseIterable {
         }
     }
 }
-
-public enum LibraryQuery {
-    /// Case/diacritic-insensitive title search, then sort. Stable for equal keys.
-    public static func apply(_ items: [MediaItem], search: String, sort: LibrarySort) -> [MediaItem] { items }
-}

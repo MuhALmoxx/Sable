@@ -12,6 +12,18 @@ enum AX {
         static func item(_ title: String) -> String { "library.item.\(title)" }
         static let itemPrefix = "library.item."
         static let remove = "library.remove"
+        // Added by the library agent:
+        static let layoutToggle = "library.layoutToggle"
+        static let importJob = "library.importJob"
+        static let noResults = "library.noResults"
+        static let clearSearch = "library.clearSearch"
+        static let banner = "library.banner"
+        static let rename = "library.rename"
+        static let renameField = "library.renameField"
+        static let addSubtitle = "library.addSubtitle"
+        static let markUnwatched = "library.markUnwatched"
+        static let subtitleTargetSheet = "library.subtitleTarget"
+        static func subtitleTarget(_ title: String) -> String { "library.subtitleTarget.\(title)" }
     }
     enum Player {
         static let screen = "player.screen"
@@ -94,5 +106,21 @@ enum AX {
         static let doubleTap = "settings.doubleTap"
         static let apiKeyField = "settings.apiKey"
         static let licenses = "settings.licenses"
+        // Added by the library agent:
+        static let back = "settings.back"
+        static let defaultSpeed = "settings.defaultSpeed"
+        static let resume = "settings.resume"
+        static let vlcForAll = "settings.vlcForAll"
+        static let subtitlePreview = "settings.subtitlePreview"
+        static let subtitleSize = "settings.subtitleSize"
+        static let subtitleBackground = "settings.subtitleBackground"
+        static let subtitleFont = "settings.subtitleFont"
+        static let showOriginal = "settings.showOriginal"
+        static let storageTotal = "settings.storageTotal"
+        static let clearThumbnails = "settings.clearThumbnails"
+        static let clearSubtitleCache = "settings.clearSubtitleCache"
+        static let version = "settings.version"
+        static let licensesScreen = "settings.licensesScreen"
+        static func license(_ id: String) -> String { "settings.license.\(id)" }
     }
 }
