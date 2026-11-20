@@ -1,0 +1,166 @@
+name: Sable
+
+options:
+  bundleIdPrefix: com.murisixz
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+  xcodeVersion: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+
+packages:
+  SableKit:
+    path: Packages/SableKit
+
+targets:
+  Sable:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - "Info.plist"
+      - path: Fixtures/UITestFixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: SableKit
+        product: SubtitleKit
+      - package: SableKit
+        product: TranslationKit
+      - package: SableKit
+        product: LibraryKit
+      - framework: Vendor/MobileVLCKit.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Sable
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIUserInterfaceStyle: Dark
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: true
+        UIBackgroundModes:
+          - audio
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: false
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.matroska.mkv
+            UTTypeDescription: Matroska video
+            UTTypeConformsTo: [public.movie]
+            UTTypeTagSpecification:
+              public.filename-extension: [mkv]
+              public.mime-type: [video/x-matroska]
+          - UTTypeIdentifier: org.webmproject.webm
+            UTTypeDescription: WebM video
+            UTTypeConformsTo: [public.movie]
+            UTTypeTagSpecification:
+              public.filename-extension: [webm]
+              public.mime-type: [video/webm]
+          - UTTypeIdentifier: com.murisixz.sable.subrip
+            UTTypeDescription: SubRip subtitles
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [srt]
+              public.mime-type: [application/x-subrip]
+          - UTTypeIdentifier: com.murisixz.sable.webvtt
+            UTTypeDescription: WebVTT subtitles
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [vtt]
+              public.mime-type: [text/vtt]
+          - UTTypeIdentifier: com.murisixz.sable.ass
+            UTTypeDescription: Advanced SubStation Alpha subtitles
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [ass, ssa]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Video
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.movie, org.matroska.mkv, org.webmproject.webm]
+          - CFBundleTypeName: Subtitles
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.murisixz.sable.subrip, com.murisixz.sable.webvtt, com.murisixz.sable.ass]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.murisixz.sable
+        PRODUCT_NAME: Sable
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+      configs:
+        Release:
+          # UI-test fixtures ship only in Debug builds.
+          EXCLUDED_SOURCE_FILE_NAMES: UITestFixtures
+
+  SableTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AppTests
+    dependencies:
+      - target: Sable
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.murisixz.sable.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Sable.app/Sable"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TARGETED_DEVICE_FAMILY: "1"
+
+  SableUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+      - path: App/Core/AccessibilityIDs.swift
+    dependencies:
+      - target: Sable
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.murisixz.sable.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Sable
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  Sable:
+    build:
+      targets:
+        Sable: all
+        SableTests: [test]
+        SableUITests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: SableTests
+        - name: SableUITests
+    run:
+      config: Debug
+    archive:
+      config: Release

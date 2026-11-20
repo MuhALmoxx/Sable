@@ -1,0 +1,149 @@
+name: Sable CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "design/**"
+  workflow_dispatch:
+    inputs:
+      ui_tests:
+        description: "Run simulator UI tests and capture screenshots"
+        type: boolean
+        default: true
+      runner:
+        description: "macOS runner image"
+        type: choice
+        default: macos-latest
+        options: [macos-latest, macos-26, macos-15]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  VLCKIT_VERSION: "3.7.5"
+
+jobs:
+  core-linux:
+    name: Core tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: swift:6.1.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test (SableKit)
+        run: swift test --package-path Packages/SableKit
+
+  ios:
+    name: iOS build, tests, IPA
+    runs-on: ${{ inputs.runner || 'macos-latest' }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE/Contents/Developer"; fi
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache MobileVLCKit
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: mobilevlckit-${{ env.VLCKIT_VERSION }}-v1
+
+      - name: Fetch MobileVLCKit (pinned, checksum-verified)
+        run: ./scripts/fetch-vlckit.sh
+
+      - name: Package tests (macOS)
+        run: |
+          set -o pipefail
+          mkdir -p build
+          swift test --package-path Packages/SableKit 2>&1 | tee build/package-tests-macos.log | grep -E "error:|failed|Executed [0-9]+ tests" || true
+          ! grep -qE "(error:|with [1-9][0-9]* failures?)" build/package-tests-macos.log
+
+      - name: Generate Xcode project
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+
+      - name: Build for iPhone (Release, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project Sable.xcodeproj -scheme Sable -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DD \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build/device-build.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build/device-build.log
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=build/DD/Build/Products/Release-iphoneos/Sable.app
+          test -d "$APP"
+          test -d "$APP/Frameworks/MobileVLCKit.framework"
+          if find "$APP" -name "UITestFixtures" | grep -q .; then echo "UI-test fixtures leaked into Release" >&2; exit 1; fi
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/
+          (cd dist && zip -qry Sable-unsigned.ipa Payload)
+          shasum -a 256 dist/Sable-unsigned.ipa | tee dist/Sable-unsigned.ipa.sha256
+          ls -lh dist/Sable-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sable-unsigned-ipa
+          path: |
+            dist/Sable-unsigned.ipa
+            dist/Sable-unsigned.ipa.sha256
+          retention-days: 30
+
+      - name: Simulator tests (unit + UI)
+        if: ${{ github.ref == 'refs/heads/main' || inputs.ui_tests }}
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 tools/ci/pick_simulator.py)
+          echo "Simulator: $UDID"
+          set +e
+          xcodebuild test -project Sable.xcodeproj -scheme Sable -destination "id=$UDID" \
+            -derivedDataPath build/DDSim -resultBundlePath build/Tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO > build/tests.log 2>&1
+          STATUS=$?
+          set -e
+          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ tests|TEST (SUCCEEDED|FAILED)|SABLE_METRIC" build/tests.log || true
+          python3 tools/ci/summarize_tests.py build/tests.log >> "$GITHUB_STEP_SUMMARY" || true
+          exit $STATUS
+
+      - name: Export screenshots
+        if: ${{ always() && (github.ref == 'refs/heads/main' || inputs.ui_tests) }}
+        run: python3 tools/ci/export_attachments.py build/Tests.xcresult build/screens || true
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-and-screens
+          path: |
+            build/*.log
+            build/screens
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish rolling pre-release
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest dist/Sable-unsigned.ipa dist/Sable-unsigned.ipa.sha256 \
+            --title "Sable (latest build ${GITHUB_SHA::7})" \
+            --notes "Unsigned IPA. It must be signed (e.g. with your Apple ID via AltStore/Sideloadly, or your own certificate) before it can be installed on an iPhone. Built from ${GITHUB_SHA} by run ${GITHUB_RUN_ID}." \
+            --prerelease
