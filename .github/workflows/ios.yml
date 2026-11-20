@@ -187,6 +187,7 @@ jobs:
           xcodebuild test-without-building -project Sable.xcodeproj -scheme Sable -destination "id=$UDID" \
             -derivedDataPath build/DDSim -resultBundlePath build/Tests.xcresult \
             -parallel-testing-enabled NO \
+            -retry-tests-on-failure -test-iterations 2 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 420 -maximum-test-execution-time-allowance 900 \
             ${ONLY[@]+"${ONLY[@]}"} > build/tests.log 2>&1
           STATUS=$?

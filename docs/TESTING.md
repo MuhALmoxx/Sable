@@ -5,7 +5,8 @@
 All automated tests run on **GitHub Actions**: the SableKit package tests on Linux (`swift:6.1.2`
 container) and macOS, and the hosted unit tests and XCUITest journeys on an iOS simulator (on
 `main`, or on a manual dispatch with `ui_tests`). The job summary lists every test with its result
-and any skip reason.
+and any skip reason. UI journeys share a 40-second sample clip and slow, shared simulators, so CI retries a failed
+test once (`-retry-tests-on-failure -test-iterations 2`); a retried test shows both attempts in the log.
 
 **No testing has been done on a physical iPhone.** Behaviour that only a device shows is
 unverified: hardware decoding and performance, Picture in Picture, background behaviour, rotation

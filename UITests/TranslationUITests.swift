@@ -29,7 +29,7 @@ final class TranslationUITests: SableUITestCase {
 
     func testCancelMidwayThenResumeContinuesFromCheckpoint() throws {
         // Slow the mock down so there is time to cancel between chunks.
-        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "4.0"])
+        launch(Launch.seededWithMockTranslation + ["-mockTranslationDelay", "8.0"])
         openLibraryItem(Fixture.mkvTitle)
         selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
         openTranslationSheet()
