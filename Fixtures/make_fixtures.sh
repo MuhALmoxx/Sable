@@ -60,8 +60,15 @@ ffmpeg -hide_banner -loglevel error -y -i .work/v.mp4 -i .work/a1.m4a -i .work/a
   -metadata:s:s:0 language=eng -metadata:s:s:0 title="English" \
   -movflags +faststart "$OUT_UI/night-roof.mp4"
 
+# WebVTT inside Matroska (D_WEBVTT/SUBTITLES) and WebM, subtitle-only. Stream copy keeps cue ids,
+# settings and markup verbatim in the blocks ("id\nsettings\npayload"), as real muxers store them.
+for EXT in mkv webm; do
+  ffmpeg -hide_banner -loglevel error -y -fflags +bitexact -i src/sample.en.vtt -map 0 -c:s copy \
+    -metadata:s:s:0 language=eng -metadata:s:s:0 title="English (WebVTT)" "$OUT_UNIT/sample.webvtt.$EXT"
+done
+
 cp src/sample.late2500.en.srt "$OUT_UI/night-roof.late.en.srt"
-cp src/sample.en.srt src/sample.en.ass src/sample.fr.srt src/sample.late2500.en.srt "$OUT_UNIT/"
+cp src/sample.en.srt src/sample.en.ass src/sample.fr.srt src/sample.late2500.en.srt src/sample.en.vtt "$OUT_UNIT/"
 cp "$OUT_UI/night-roof.mkv" "$OUT_UNIT/night-roof.mkv"
 rm -rf .work
 ls -la "$OUT_UI" "$OUT_UNIT"
