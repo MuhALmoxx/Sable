@@ -1,0 +1,51 @@
+WEBVTT - Night Roof (Sable sample)
+Kind: captions
+Language: en
+
+STYLE
+::cue(.loud) { color: #FFB43C; }
+
+NOTE Same dialogue and timing as sample.en.srt, written with WebVTT markup
+(voice spans, classes, ruby, inline timestamps, entities, cue settings).
+
+title
+00:00.500 --> 00:02.500 line:0
+NIGHT CITY — 2:14 AM
+
+1
+00:03.000 --> 00:05.200
+<v Idris>Mara, are you still awake?</v>
+
+2
+00:07.500 --> 00:10.400
+<v Mara>I can't sleep.
+The city is too loud tonight.</v>
+
+3
+00:12.000 --> 00:14.300 align:center line:-1
+<v.quiet Idris>Then let's go <c.loud>up</c> to the roof.</v>
+
+4
+00:16.500 --> 00:18.200
+<v Mara><i>Is it safe?</i></v>
+
+5
+00:00:17.600 --> 00:00:19.400
+Trust <00:00:18.500>me.
+
+6
+00:21.000 --> 00:24.800
+Look — every light down there
+is <ruby>someone's<rt>someone is</rt></ruby> story.
+
+7
+00:25.500 --> 00:28.000
+<lang en>You sound like your father, Idris.</lang>
+
+8
+00:30.000 --> 00:32.600
+He taught me to watch the night&#46;
+
+9
+00:34.500 --> 00:37.000
+Then let's watch it together, Mara.
