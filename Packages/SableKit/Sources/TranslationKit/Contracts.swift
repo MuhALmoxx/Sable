@@ -29,8 +29,56 @@ public struct TargetLanguageProfile: Hashable, Sendable, Identifiable {
 public enum TargetLanguages {
     public static var arabic: TargetLanguageProfile {
         TargetLanguageProfile(code: .arabic, englishName: "Arabic", nativeName: "العربية", isRightToLeft: true,
-                              promptGuidance: "", maxLineLength: 42)
+                              promptGuidance: arabicGuidance, maxLineLength: 42)
     }
+
+    /// Arabic subtitle style guide injected into LLM prompts. Stable text (it is part of the
+    /// cached system prompt), so edit deliberately.
+    static let arabicGuidance = """
+    Write Modern Standard Arabic (الفصحى المعاصرة) as used in professional film and TV subtitles: \
+    natural, fluent and idiomatic, never word-for-word. Prefer the wording a skilled Arabic \
+    subtitler would choose; keep the register of each speaker (casual, formal, rude, tender) \
+    within MSA. Do not use colloquial dialect.
+
+    Length: viewers read while watching. Keep each line at most about 42 characters and each \
+    subtitle at most 2 lines. Drop filler ("well", "you know", "I mean", "like") and repetition \
+    before you drop meaning. Keep a "\\n" line break where the source has one if both halves \
+    read naturally; otherwise break at a natural phrase boundary, or use one line when short.
+
+    Agreement: choose masculine/feminine and singular/dual/plural forms for "you", verbs, \
+    adjectives and pronouns from context: who is speaking to whom, names, earlier lines and \
+    the translations already given in preceding_context. Once a character is addressed in the \
+    feminine (أنتِ، مستيقظة) or plural, stay consistent. When the gender is truly unknown, use \
+    the masculine.
+
+    Names: transliterate person and place names into Arabic script with one consistent spelling \
+    (Mara → مارا, Idris → إدريس, New York → نيويورك). If a name or term is in the glossary, \
+    reuse its target spelling exactly. Report every name and recurring invented term you \
+    render in "names". Keep brand names and titles recognisable. Translate titles and forms of \
+    address idiomatically: "Mr. Hale" → "السيد هيل", "sir" → "سيدي", "Doctor" → "دكتور".
+
+    Punctuation: use Arabic punctuation ، ؛ ؟ instead of , ; ?. Keep ! . … and the speaker dash \
+    "-" at the start of a line. Quotes as «…» or "…". No space before punctuation.
+
+    Numbers: write digits as Western digits 0-9 (2:14, 1984, 3.5), never ٠-٩. Spell out \
+    numbers only where Arabic subtitles normally would (e.g. "one day" → "يومًا ما").
+
+    Formatting: keep <i>…</i> and <b>…</b> around the Arabic words that correspond to the \
+    tagged English words (whole-line italics stay whole-line). Never add other markup, \
+    diacritics-heavy spelling, invisible direction marks or control characters; use tashkeel \
+    only where needed to prevent a real ambiguity (e.g. أنتَ / أنتِ).
+
+    Sound and music descriptions: translate them and keep the same brackets, e.g. \
+    "[door slams]" → "[يُغلق الباب بقوة]", "(laughs)" → "(يضحك)", "♪ ... ♪" keeps the notes.
+
+    Continuity: a sentence that runs across several units is translated as fragments of one \
+    Arabic sentence in the same order, each fragment staying in its own id. Move words between \
+    ids only when Arabic word order forces it, and then as little as possible. Never leave an id \
+    empty when its source has words.
+
+    Never add notes, explanations, alternatives, transliterations in Latin script or the \
+    English text. Output only the Arabic subtitle text for each id.
+    """
     /// Fully supported targets, in UI order.
     public static var all: [TargetLanguageProfile] { [arabic] }
     public static func profile(for code: LanguageCode) -> TargetLanguageProfile? { all.first { $0.code.primary == code.primary } }
@@ -84,14 +132,30 @@ public struct TokenUsage: Codable, Hashable, Sendable {
     public init(inputTokens: Int, outputTokens: Int) { self.inputTokens = inputTokens; self.outputTokens = outputTokens }
 }
 
+extension TokenUsage {
+    public static let zero = TokenUsage(inputTokens: 0, outputTokens: 0)
+    public static func + (lhs: TokenUsage, rhs: TokenUsage) -> TokenUsage {
+        TokenUsage(inputTokens: lhs.inputTokens + rhs.inputTokens, outputTokens: lhs.outputTokens + rhs.outputTokens)
+    }
+    /// USD for this usage at the given per-million-token prices.
+    public func cost(inputPricePerMTok: Double, outputPricePerMTok: Double) -> Double {
+        (Double(inputTokens) * inputPricePerMTok + Double(outputTokens) * outputPricePerMTok) / 1_000_000
+    }
+}
+
 public struct TranslationChunkResponse: Sendable {
     /// id -> translated text.
     public var translations: [String: String]
     /// New or confirmed name/term renderings discovered in this chunk.
     public var glossary: [GlossaryEntry]
     public var usage: TokenUsage?
-    public init(translations: [String: String], glossary: [GlossaryEntry] = [], usage: TokenUsage? = nil) {
+    /// Model that actually produced the response when it differs from the requested one
+    /// (server-side refusal fallback). nil when the requested model answered.
+    public var servedByModel: String?
+    public init(translations: [String: String], glossary: [GlossaryEntry] = [], usage: TokenUsage? = nil,
+                servedByModel: String? = nil) {
         self.translations = translations; self.glossary = glossary; self.usage = usage
+        self.servedByModel = servedByModel
     }
 }
 
@@ -176,16 +240,33 @@ public struct TranslationJobSpec: Sendable {
 }
 
 public struct TranslationProgress: Codable, Hashable, Sendable {
+    /// Cues with a final translation (pass-through cues without words count as done).
     public var completedCues: Int
     public var totalCues: Int
+    /// Planned chunks finished / planned chunks for the whole job (repairs and splits are
+    /// extra requests inside a chunk and do not change these).
     public var completedChunks: Int
     public var totalChunks: Int
+    /// Accumulated provider usage for the job (including earlier sessions when resumed).
     public var usage: TokenUsage?
-    public init(completedCues: Int, totalCues: Int, completedChunks: Int, totalChunks: Int, usage: TokenUsage? = nil) {
+    /// Provider requests actually sent (including repairs, splits and retries).
+    public var requestsSent: Int
+    /// Repair or split requests made because a response did not line up with the cue ids.
+    public var repairRequests: Int
+    /// Ids returned by the provider that were not asked for (ignored).
+    public var ignoredUnexpectedIDs: Int
+    /// Requests answered by a server-side fallback model after a safety decline.
+    public var fallbackResponses: Int
+
+    public init(completedCues: Int, totalCues: Int, completedChunks: Int, totalChunks: Int, usage: TokenUsage? = nil,
+                requestsSent: Int = 0, repairRequests: Int = 0, ignoredUnexpectedIDs: Int = 0, fallbackResponses: Int = 0) {
         self.completedCues = completedCues; self.totalCues = totalCues
         self.completedChunks = completedChunks; self.totalChunks = totalChunks; self.usage = usage
+        self.requestsSent = requestsSent; self.repairRequests = repairRequests
+        self.ignoredUnexpectedIDs = ignoredUnexpectedIDs; self.fallbackResponses = fallbackResponses
     }
     public var fraction: Double { totalCues == 0 ? 0 : Double(completedCues) / Double(totalCues) }
+    public var isComplete: Bool { totalCues > 0 && completedCues >= totalCues }
 }
 
 public struct CostEstimate: Hashable, Sendable {
@@ -198,31 +279,17 @@ public struct CostEstimate: Hashable, Sendable {
         self.cueCount = cueCount; self.characterCount = characterCount; self.requestCount = requestCount
         self.estimatedInputTokens = estimatedInputTokens; self.estimatedOutputTokens = estimatedOutputTokens
     }
-}
 
-/// Orchestrates a whole-track translation: chunking with context, mapping validation and
-/// repair, checkpointing after every chunk (resume after cancel/crash), and a completed cache.
-public actor TranslationEngine {
-    public init(storeDirectory: URL) {}
-
-    /// Completed translation for exactly this source content + target + provider + model, if cached.
-    public func cachedResult(for spec: TranslationJobSpec) -> SubtitleDocument? { nil }
-
-    /// Progress of a resumable partial job, if a checkpoint exists.
-    public func checkpointProgress(for spec: TranslationJobSpec) -> TranslationProgress? { nil }
-
-    public func discardCheckpoint(for spec: TranslationJobSpec) {}
-
-    public func estimate(for spec: TranslationJobSpec) -> CostEstimate {
-        CostEstimate(cueCount: spec.source.cues.count, characterCount: 0, requestCount: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0)
-    }
-
-    /// Runs (or resumes) the job. Reports progress after every chunk. On task cancellation,
-    /// saves the checkpoint and throws `CancellationError`. On success returns a document with
-    /// the same cue ids/order/timestamps as the source, `language == target.code`, stores it in
-    /// the cache and removes the checkpoint.
-    public func run(_ spec: TranslationJobSpec, provider: any TranslationProvider,
-                    progress: @escaping @Sendable (TranslationProgress) -> Void) async throws -> SubtitleDocument {
-        throw TranslationError.providerUnavailable("TranslationEngine not implemented")
+    /// Approximate USD range for the job. The low end assumes the estimate is a little high
+    /// (cached system prompt, short replies); the high end adds room for the model's internal
+    /// reasoning tokens (billed as output), repair requests and retries.
+    public func costRange(inputPricePerMTok: Double, outputPricePerMTok: Double) -> ClosedRange<Double> {
+        let low = (Double(estimatedInputTokens) * 0.8 * inputPricePerMTok
+            + Double(estimatedOutputTokens) * 0.9 * outputPricePerMTok) / 1_000_000
+        let high = (Double(estimatedInputTokens) * 1.25 * inputPricePerMTok
+            + Double(estimatedOutputTokens) * 2.5 * outputPricePerMTok) / 1_000_000
+        return low...max(low, high)
     }
 }
+
+// `TranslationEngine` lives in Engine.swift.
