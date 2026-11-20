@@ -28,7 +28,5 @@ tar -xJf "$TMP/vlckit.tar.xz" -C "$TMP"
 rm -rf "$DEST/MobileVLCKit.xcframework"
 mv "$TMP/MobileVLCKit-binary/MobileVLCKit.xcframework" "$DEST/"
 cp "$TMP/MobileVLCKit-binary/COPYING.txt" "$DEST/MobileVLCKit-COPYING.txt"
-# Drop debug symbols and 32-bit slices we never ship (keeps CI caches small).
-find "$DEST/MobileVLCKit.xcframework" -name dSYMs -type d -prune -exec rm -rf {} +
 touch "$MARKER"
 echo "MobileVLCKit ${VERSION} ready in Vendor/"

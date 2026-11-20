@@ -58,7 +58,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor
-          key: mobilevlckit-${{ env.VLCKIT_VERSION }}-v1
+          key: mobilevlckit-${{ env.VLCKIT_VERSION }}-v2
 
       - name: Fetch MobileVLCKit (pinned, checksum-verified)
         run: ./scripts/fetch-vlckit.sh
