@@ -63,8 +63,11 @@ class SableUITestCase: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        if let app, app.state == .runningForeground, testRun?.hasSucceeded == false {
-            attachScreenshot("failure-\(name)")
+        // `hasSucceeded` is still false while the test is running, so count failures instead.
+        if let app, app.state == .runningForeground, (testRun?.totalFailureCount ?? 0) > 0 {
+            let testName = name.replacingOccurrences(of: "-[", with: "").replacingOccurrences(of: "]", with: "")
+                .replacingOccurrences(of: " ", with: "-")
+            attachScreenshot("failure-\(testName)")
         }
         XCUIDevice.shared.orientation = .portrait
         try super.tearDownWithError()

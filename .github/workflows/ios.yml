@@ -166,6 +166,9 @@ jobs:
         run: |
           xcrun simctl boot "$UDID" 2>/dev/null || true
           xcrun simctl bootstatus "$UDID" -b
+          # Clean, stable status bar for the exported screenshots.
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 \
+            --wifiBars 3 --cellularMode active --cellularBars 4 || true
           echo "Booted ${{ steps.sim.outputs.name }} (${{ steps.sim.outputs.runtime }})"
 
       - name: Simulator tests (unit + UI)
