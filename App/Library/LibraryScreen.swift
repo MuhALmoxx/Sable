@@ -75,42 +75,62 @@ struct LibraryScreen: View {
     // MARK: Header
 
     private func header(count: Int, isEmpty: Bool) -> some View {
-        HStack(alignment: .center, spacing: Spacing.xs) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("SABLE")
-                    .font(Typo.display)
-                    .tracking(2)
-                    .foregroundStyle(Palette.textPrimary)
-                    .accessibilityLabel("Sable")
-                    .accessibilityAddTraits(.isHeader)
-                Text(verbatim: count == 1 ? "1 VIDEO" : "\(count) VIDEOS")
-                    .font(Typo.micro)
-                    .tracking(1)
-                    .foregroundStyle(Palette.textTertiary)
-                    .accessibilityLabel(Text(verbatim: count == 1 ? "1 video" : "\(count) videos"))
+        // One row normally; at large text sizes the controls move under the wordmark.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Spacing.xs) {
+                wordmark(count: count)
+                Spacer(minLength: Spacing.xs)
+                headerControls(isEmpty: isEmpty)
             }
-            Spacer(minLength: Spacing.xs)
-            if !isEmpty {
-                PixelIconButton(services.settings.libraryUsesGrid ? .list : .grid,
-                                label: services.settings.libraryUsesGrid ? "Show as list" : "Show as grid",
-                                size: 18) {
-                    services.settings.libraryUsesGrid.toggle()
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                wordmark(count: count)
+                HStack(spacing: Spacing.xs) {
+                    headerControls(isEmpty: isEmpty)
+                    Spacer(minLength: 0)
                 }
-                .accessibilityIdentifier(AX.Library.layoutToggle)
-            }
-            PixelIconButton(.settings, label: "Settings", size: 20) {
-                searchFocused = false
-                showSettings = true
-            }
-            .accessibilityIdentifier(AX.Library.settings)
-            if !isEmpty {
-                importButton(title: "Import")
             }
         }
         .padding(.leading, Spacing.md)
         .padding(.trailing, Spacing.xs)
         .padding(.top, Spacing.sm)
         .padding(.bottom, Spacing.sm)
+    }
+
+    private func wordmark(count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("SABLE")
+                .font(Typo.display)
+                .tracking(2)
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+                .accessibilityLabel("Sable")
+                .accessibilityAddTraits(.isHeader)
+            Text(verbatim: count == 1 ? "1 VIDEO" : "\(count) VIDEOS")
+                .font(Typo.micro)
+                .tracking(1)
+                .foregroundStyle(Palette.textTertiary)
+                .accessibilityLabel(Text(verbatim: count == 1 ? "1 video" : "\(count) videos"))
+        }
+    }
+
+    @ViewBuilder
+    private func headerControls(isEmpty: Bool) -> some View {
+        if !isEmpty {
+            PixelIconButton(services.settings.libraryUsesGrid ? .list : .grid,
+                            label: services.settings.libraryUsesGrid ? "Show as list" : "Show as grid",
+                            size: 18) {
+                services.settings.libraryUsesGrid.toggle()
+            }
+            .accessibilityIdentifier(AX.Library.layoutToggle)
+        }
+        PixelIconButton(.settings, label: "Settings", size: 20) {
+            searchFocused = false
+            showSettings = true
+        }
+        .accessibilityIdentifier(AX.Library.settings)
+        if !isEmpty {
+            importButton(title: "Import")
+        }
     }
 
     private func importButton(title: String) -> some View {
