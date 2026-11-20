@@ -61,8 +61,12 @@ enum MKVID {
     static let void: UInt32 = 0xEC
     static let crc32: UInt32 = 0xBF
 
-    /// Children of Segment. Seeing one of these ends an unknown-size Cluster.
+    /// Children of Segment (besides Void / CRC-32).
     static let segmentLevel: Set<UInt32> = [seekHead, info, tracks, cluster, cues, chapters, tags, attachments]
+
+    /// Valid children of a Cluster: Timestamp, SilentTracks, Position, PrevSize, SimpleBlock,
+    /// BlockGroup, EncryptedBlock, Void, CRC-32. Anything else ends an unknown-size Cluster.
+    static let clusterChildren: Set<UInt32> = [clusterTimestamp, 0x5854, 0xA7, 0xAB, simpleBlock, blockGroup, 0xAF, void, crc32]
 }
 
 struct EBMLElementHeader: Equatable {

@@ -37,6 +37,12 @@ final class MatroskaSyntheticTests: XCTestCase {
         XCTAssertEqual(tracks[2].language, LanguageCode("fr"))
         XCTAssertEqual(tracks.map { MatroskaCodec.displayName(forCodecID: $0.codecID) },
                        ["V_MPEG4/ISO/AVC", "PGS · image", "VobSub · image", "DVB · image", "SRT", "HDMV Text · unsupported"])
+        let pgs = try XCTUnwrap(tracks[1].subtitleTrackDescriptor)
+        XCTAssertEqual(pgs.kind, .image)
+        XCTAssertFalse(pgs.isTranslatable)
+        XCTAssertEqual(pgs.title, "Arabic PGS")
+        XCTAssertEqual(tracks[3].subtitleTrackDescriptor?.title, "English") // no name: language
+        XCTAssertNil(tracks[0].subtitleTrackDescriptor)
         let docs = try r.extractTextSubtitles(trackNumbers: [2, 3, 4, 5, 6])
         XCTAssertEqual(Array(docs.keys), [5])
         XCTAssertEqual(docs[5]?.cues.map(\.text), ["Text"])
@@ -278,6 +284,15 @@ final class MatroskaSyntheticTests: XCTestCase {
         let garbage: [UInt8] = [0x00, 0x00, 0x00, 0x12, 0x00, 0x7F, 0x00, 0x00]
         let file = MKV.file(unknownSegmentSize: true, [MKV.tracks([MKV.srtTrack(2)]), first, garbage, second])
         XCTAssertEqual(try extract(file).cues.map(\.text), ["Before", "After"])
+
+        // Garbage that parses as a header (ID 0x4242) with a ~4 GB size must not swallow the rest.
+        let plausible: [UInt8] = [0x42, 0x42, 0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0x11, 0x22, 0x33]
+        let sized = MKV.file(unknownSegmentSize: true, [MKV.tracks([MKV.srtTrack(2)]), first, plausible, second])
+        XCTAssertEqual(try extract(sized).cues.map(\.text), ["Before", "After"])
+        // ...also when it follows an unknown-size Cluster (it ends that Cluster).
+        let open = MKV.cluster(timestamp: 0, [MKV.blockGroup(track: 2, timestamp: 0, bytes("Open"), duration: 1000)], unknownSize: true)
+        let afterOpen = MKV.file(unknownSegmentSize: true, [MKV.tracks([MKV.srtTrack(2)]), open, plausible, second])
+        XCTAssertEqual(try extract(afterOpen).cues.map(\.text), ["Open", "After"])
     }
 
     // MARK: Text codecs

@@ -31,6 +31,14 @@ final class MatroskaFixtureTests: XCTestCase {
         XCTAssertNil(tracks[0].subtitleKind)
         XCTAssertNotEqual(tracks[0].uid, 0)
 
+        let descriptors = tracks.compactMap(\.subtitleTrackDescriptor)
+        XCTAssertEqual(descriptors.map(\.id), ["emb:mkv:4", "emb:mkv:5", "emb:mkv:6"])
+        XCTAssertEqual(descriptors.map(\.title), ["English", "English (styled)", "Français"])
+        XCTAssertEqual(descriptors.map(\.timingGroupID), ["emb:mkv:4", "emb:mkv:5", "emb:mkv:6"])
+        XCTAssertEqual(descriptors[1].origin, .embedded(container: .matroska, streamID: 5, codecID: "S_TEXT/ASS"))
+        XCTAssertEqual(descriptors.map(\.isDefault), [true, false, false])
+        XCTAssertTrue(descriptors.allSatisfy(\.isTranslatable))
+
         // Reading tracks stops at the first Cluster: only a few KB of the 720 KB file are read.
         XCTAssertLessThan(reader.io.bytesRead, 64 * 1024)
         // Cached.

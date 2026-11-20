@@ -25,6 +25,19 @@ public struct MatroskaTrackInfo: Hashable, Sendable {
     /// D_WEBVTT/SUBTITLES -> .text; S_HDMV/PGS, S_VOBSUB, S_DVBSUB, S_HDMV/TEXTST(?) -> .image.
     public var subtitleKind: SubtitleTrackKind? { MatroskaCodec.subtitleKind(forCodecID: codecID) }
     public var subtitleFormat: SubtitleFormat { MatroskaCodec.subtitleFormat(forCodecID: codecID) }
+
+    /// Descriptor for a subtitle track (nil for video/audio/other tracks) using the
+    /// "emb:mkv:<TrackNumber>" id convention. Title: the track Name, else the language's
+    /// display name, else "Track <n>".
+    public var subtitleTrackDescriptor: SubtitleTrackDescriptor? {
+        guard let kind = subtitleKind else { return nil }
+        return SubtitleTrackDescriptor(
+            id: SubtitleTrackDescriptor.embeddedID(container: .matroska, streamID: number),
+            title: name ?? language?.displayName ?? "Track \(number)",
+            language: language, format: subtitleFormat, kind: kind,
+            origin: .embedded(container: .matroska, streamID: number, codecID: codecID),
+            isDefault: isDefault, isForced: isForced)
+    }
 }
 
 public enum MatroskaCodec {
@@ -466,10 +479,13 @@ public final class MatroskaReader {
             if e.id == MKVID.cluster {
                 p = try scanCluster(e, targets: targets, frames: &frames, sequence: &sequence,
                                     elementCounter: &elementCounter, isCancelled: isCancelled)
-            } else if e.size == nil {
-                p = skipUnknownSized(e)
+            } else if MKVID.segmentLevel.contains(e.id) || e.id == MKVID.void || e.id == MKVID.crc32 {
+                p = e.size == nil ? skipUnknownSized(e) : e.end(clampedTo: segmentEnd)
             } else {
-                p = e.end(clampedTo: segmentEnd)
+                // Not a Segment child: corrupt bytes that happened to parse as a header (their
+                // "size" could skip the rest of the file). Resynchronise on the next Cluster.
+                guard let next = try io.find([0x1F, 0x43, 0xB6, 0x75], from: p + 1, limit: segmentEnd) else { break }
+                p = next
             }
         }
         if isCancelled() { throw SubtitleError.cancelled }
@@ -512,7 +528,8 @@ public final class MatroskaReader {
             elementCounter += 1
             if elementCounter & 1023 == 0, isCancelled() { throw SubtitleError.cancelled }
             guard let child = header(at: p) else { return known ? end : p }
-            if !known && (MKVID.segmentLevel.contains(child.id) || child.id == MKVID.ebml) { return p }
+            // An unknown-size Cluster ends at the first element that cannot be its child.
+            if !known && !MKVID.clusterChildren.contains(child.id) { return p }
             guard child.size != nil else { return known ? end : p }
             let childEnd = child.end(clampedTo: end)
             switch child.id {
