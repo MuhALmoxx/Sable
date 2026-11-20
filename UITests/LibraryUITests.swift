@@ -17,8 +17,10 @@ final class LibraryUITests: SableUITestCase {
         XCTAssertFalse(element(AX.Library.emptyState).exists)
         // Durations/thumbnails are generated in the background; give them a moment to land so the
         // screenshot shows the finished grid (the wait ends as soon as a duration is visible).
-        _ = waitUntil("a duration label is shown", timeout: 10) {
-            self.app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", #".*\d+:\d{2}.*"#)).count > 0
+        // Rows are single buttons whose VoiceOver label spells the duration ("…, 40 seconds, …").
+        _ = waitUntil("a duration is shown", timeout: 10) {
+            let label = self.element(AX.Library.item(Fixture.mp4Title)).label
+            return label.contains("second") || label.contains("minute")
         }
         attachScreenshot("01-library")
     }

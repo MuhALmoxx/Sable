@@ -112,6 +112,10 @@ struct PlayerContentView: View {
             // (AVFoundation continues in PiP or pauses itself.)
             if phase == .background, session.engineKind == .vlc, session.isPlaying { session.pause() }
         }
+        .onChange(of: services.libraryRevision) { _, _ in
+            // e.g. a subtitle file opened from another app was attached to this video.
+            Task { await session.reloadSubtitleTracks() }
+        }
         .onAppear { scheduleHide() }
         .onDisappear {
             if let originalBrightness { DeviceControls.brightness = originalBrightness }
@@ -533,13 +537,12 @@ struct PlayerContentView: View {
             TranslationSheet(session: session)
                 .presentationDetents([.medium, .large])
         case .timing:
-            TimingPanel(session: session, onClose: { activeSheet = nil })
-                .presentationDetents([.height(340)])
-                .presentationBackgroundInteraction(.enabled)
+            // TimingPanel/GuidedSyncView set their own detents + background interaction.
+            TimingPanel(session: session, onClose: { activeSheet = nil },
+                        onChooseTrack: { activeSheet = .tracks })
         case .sync:
-            GuidedSyncView(session: session, onClose: { activeSheet = nil })
-                .presentationDetents([.fraction(0.62), .large])
-                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.62)))
+            GuidedSyncView(session: session, onClose: { activeSheet = nil },
+                           onChooseTrack: { activeSheet = .tracks })
         case .info:
             PlaybackInfoSheet(session: session, onClose: { activeSheet = nil })
                 .presentationDetents([.medium])

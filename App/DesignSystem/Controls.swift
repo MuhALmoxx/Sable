@@ -9,7 +9,7 @@ import SwiftUI
 /// The whole row (>= 44 pt) toggles. Use `.toggleStyle(.pixel)`.
 struct PixelToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
-        PixelToggleRow(configuration: configuration)
+        PixelToggleStyleRow(configuration: configuration)
     }
 }
 
@@ -17,7 +17,7 @@ extension ToggleStyle where Self == PixelToggleStyle {
     static var pixel: PixelToggleStyle { PixelToggleStyle() }
 }
 
-private struct PixelToggleRow: View {
+private struct PixelToggleStyleRow: View {
     let configuration: ToggleStyleConfiguration
 
     @Environment(\.isEnabled) private var isEnabled

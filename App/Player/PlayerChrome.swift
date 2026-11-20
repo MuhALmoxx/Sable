@@ -49,35 +49,6 @@ final class EngineHostView: UIView {
     }
 }
 
-// MARK: - Spinner
-
-/// Eight amber cells chasing around a 3×3 ring.
-struct PixelSpinner: View {
-    var size: CGFloat = 28
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let ring: [(Int, Int)] = [(0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.09)) { context in
-            let step = reduceMotion ? 0 : Int(context.date.timeIntervalSinceReferenceDate / 0.09) % 8
-            Canvas { canvas, canvasSize in
-                let cell = floor(min(canvasSize.width, canvasSize.height) / 3)
-                let gap = max(1, (cell * 0.18).rounded())
-                for (index, position) in Self.ring.enumerated() {
-                    let age = (step - index + 8) % 8
-                    let opacity: Double = age == 0 ? 1 : age == 1 ? 0.6 : age == 2 ? 0.35 : 0.15
-                    let rect = CGRect(x: CGFloat(position.0) * cell + gap / 2, y: CGFloat(position.1) * cell + gap / 2,
-                                      width: cell - gap, height: cell - gap)
-                    canvas.fill(Path(rect), with: .color(Palette.accent.opacity(opacity)))
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: - Scrubber and time labels
 
 /// Pixel scrubber: drag to scrub with a precise timecode preview, tap to seek.

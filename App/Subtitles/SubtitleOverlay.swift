@@ -128,7 +128,7 @@ struct SubtitleBlock: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(cues.map { SubtitleMarkup.plain($0.text) }.joined(separator: "\n"))
             .accessibilityAddTraits(.isStaticText)
-            .modifier(OptionalIdentifier(identifier: identifier))
+            .modifier(OverlayOptionalIdentifier(identifier: identifier))
     }
 
     @ViewBuilder
@@ -166,7 +166,7 @@ struct SubtitleBlock: View {
     }
 }
 
-private struct OptionalIdentifier: ViewModifier {
+private struct OverlayOptionalIdentifier: ViewModifier {
     let identifier: String?
 
     func body(content: Content) -> some View {

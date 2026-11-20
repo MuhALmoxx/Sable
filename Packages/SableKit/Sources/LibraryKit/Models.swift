@@ -89,7 +89,8 @@ public struct PlaybackMemory: Codable, Hashable, Sendable {
     public var completed: Bool
     public var rate: Float
     public var audioTrackID: String?
-    /// nil = subtitles off.
+    /// nil = never chosen (the player auto-selects the embedded default / first English text track);
+    /// "off" (PlayerSession.subtitlesOffMarker) = the user turned subtitles off; otherwise a track id.
     public var subtitleTrackID: String?
     public var aspectMode: AspectMode
     /// Per-video subtitle style override; nil = app default from settings.

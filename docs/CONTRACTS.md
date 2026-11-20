@@ -59,9 +59,19 @@ with the exact diff; the integrator applies it. Adding new files inside your own
 - Guided sync: `offset = markedSpeechStart − originalCueStart` (`SyncMath.timing`). Candidate cues:
   `SyncMath.candidateCues(... window: 10 ...)` over EFFECTIVE times; widen to 30 s, 60 s, ∞, or text search.
   A single offset fixes constant delay only; drift needs a second point (`SyncMath.twoPointTiming`).
+- A guided-sync session is ONE undo step: its first change is `setTiming(_, undoable: true)`, later
+  changes in the flow use `undoable: false`, and its Undo calls `undoTiming()`. PlayerSession updates
+  `timing`/`canUndoTiming` synchronously in setTiming/undoTiming/resetTiming/nudgeOffset and passes
+  `undoable` straight to TimingStore (which skips no-op pushes).
+- `TimingPanel(session:onClose:onChooseTrack:)` / `GuidedSyncView(session:onClose:onChooseTrack:)`:
+  `onChooseTrack` opens the player's subtitle track list from their empty state. Both views set their
+  own presentation detents + background interaction; present them with a plain `.sheet`.
 - Track ids: `ext:<uuid>`, `emb:mkv:<trackNumber>`, `emb:mp4:<trackID>`, `tr:<lang>:<sourceTrackID>`.
 - Image-based subtitle tracks (`kind == .image`) are listed and labelled "image-based", are never
   offered for translation/guided sync, and on VLC are rendered natively.
+  When one is selected, `PlayerSession.activeSubtitle` holds it with an EMPTY document (VLC draws it);
+  Sync/Translation must check `activeSubtitle?.descriptor.kind == .text` before using its cues.
+- `PlaybackMemory.subtitleTrackID`: nil = never chosen (auto default), "off" = explicitly off.
 - Translation never mutates the source track; it produces a new track with identical cue ids/timestamps.
 - Paid providers never run without an explicit confirmation sheet showing cue count and estimated tokens.
   API keys live only in the Keychain (`KeychainStore`), never in code, logs or UserDefaults.
@@ -81,11 +91,14 @@ with the exact diff; the integrator applies it. Adding new files inside your own
 ## Build and verify
 
 - Local (Linux) core tests: `source ~/.local/swift-tc/env.sh && swift test --package-path Packages/SableKit`
-- CI (GitHub Actions, macOS): every pushed branch runs Linux core tests + an unsigned Release device
-  build. `main` (or a manual dispatch with `ui_tests`) also runs simulator unit/UI tests, exports
-  screenshots and publishes the IPA. iOS code can only be compiled on CI: push your branch
+- CI (GitHub Actions, macOS): every pushed branch runs Linux core tests, an unsigned Release device
+  build + IPA verification (`tools/ci/verify_ipa.sh`) and a simulator `build-for-testing` (compiles
+  AppTests/UITests). `main` (or a manual dispatch with `ui_tests`, optionally `only_testing`) also
+  runs simulator unit/UI tests, exports screenshots and publishes the IPA. iOS code can only be compiled on CI: push your branch
   (`git push origin HEAD:refs/heads/agent/<name>`), then `gh run watch` / `gh run view --log-failed`.
 - Swift 5 language mode everywhere (app `SWIFT_VERSION 5.0`, package `swiftLanguageModes [.v5]`).
 - MobileVLCKit headers for reference (Swift module `MobileVLCKit`): see
   `Vendor/MobileVLCKit.xcframework/ios-arm64_armv7_armv7s/MobileVLCKit.framework/Headers/` after
   `scripts/fetch-vlckit.sh`.
+- DEBUG launch arguments `-uiTesting`, `-seedLibrary`, `-mockTranslation`, `-mockTranslationDelay <s>`
+  are defined in `App/Core/UITestSupport.swift`; docs/TESTING.md lists what the UI journeys expect.

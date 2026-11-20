@@ -85,6 +85,7 @@ final class AppServices {
     func removeItem(id: UUID) throws {
         try library.remove(itemID: id)
         timing.removeAll(videoID: id)
+        subtitles.forget(itemID: id)
         if playingItemID == id { playingItemID = nil }
         libraryDidChange()
     }
