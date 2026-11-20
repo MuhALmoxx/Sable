@@ -45,6 +45,8 @@ def main() -> int:
         base = re.sub(r"_[0-9A-F]{8}-[0-9A-F-]{27}", "", readable, flags=re.IGNORECASE)
         base = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-") or exported
         root, ext = os.path.splitext(base)
+        # Xcode appends "_<attachment index>" to the suggested name ("01-library_0.png").
+        root = re.sub(r"_\d+$", "", root) or root
         if not ext:
             ext = os.path.splitext(exported)[1]
         target = os.path.join(out, root + ext)
