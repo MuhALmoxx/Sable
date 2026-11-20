@@ -71,7 +71,7 @@ enum Spacing {
     static let touch: CGFloat = 44
     /// Border/divider thickness in points (whole device pixels on every iPhone).
     static let line: CGFloat = 1
-    /// Icon sizes. Multiples of 4 pt give whole device pixels per glyph cell at @3x.
+    /// Icon sizes (glyph cells are always whole device pixels; see PixelBitmap.layout).
     static let iconSmall: CGFloat = 16
     static let icon: CGFloat = 20
     static let iconLarge: CGFloat = 24

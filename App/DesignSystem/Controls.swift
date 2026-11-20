@@ -129,10 +129,10 @@ struct PixelSegmented<Value: Hashable>: View {
 
     /// - Parameters:
     ///   - label: accessibility label for the whole control ("Playback speed").
+    ///   - title: visible text of each option (a trailing closure binds here).
     ///   - identifier: optional accessibility identifier per option (UI tests).
-    ///   - title: visible text of each option.
     init(_ label: String, selection: Binding<Value>, options: [Value],
-         identifier: ((Value) -> String)? = nil, title: @escaping (Value) -> String) {
+         title: @escaping (Value) -> String, identifier: ((Value) -> String)? = nil) {
         self.label = label
         self._selection = selection
         self.options = options

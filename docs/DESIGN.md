@@ -128,10 +128,11 @@ Font findings (checked with fontTools):
   triangles pointing out / in · flag = mark · audio = headphones · volume / mute = speaker with
   waves / ×. 56 glyphs; the 7 added (`volume, mute, brightness, edit, eye, eyeOff, loop`) cover
   player gestures and visibility toggles.
-- **Rendering:** `Canvas`, one path of horizontal runs, cell size = whole device pixels. If a cell
-  one pixel larger still fits the ink (the empty margin may overhang), the larger one is used —
-  e.g. 16 pt @2x renders at 3 px/cell instead of 2. Sizes that are multiples of 4 pt are exact at
-  @3x (16 → 4 px, 20 → 5 px, 24 → 6 px per cell).
+- **Rendering:** `Canvas`, one path of horizontal runs, every cell a whole number of device
+  pixels. The cell is `floor(frame / 12)` px, or one pixel more when the 10 × 10 live area still
+  fits the frame (the empty margin may overhang). The choice ignores each glyph's own ink, so all
+  glyphs share one cell size at a given point size: 12 pt → 3 px @3x · 16 pt → 3 px @2x, 4 px @3x ·
+  20 pt → 4 px @2x, 6 px @3x · 24 pt → 4 px @2x, 7 px @3x.
 - **Validation:** `PixelGlyphArt.validationErrors()` (Swift, unit-testable) and
   `python3 design/icons/contact_sheet.py --check` both verify N rows of N characters, only `#`/`.`,
   ink present, clear margin, no duplicates, art for every case. The script also renders
@@ -145,7 +146,7 @@ Font findings (checked with fontTools):
 | `PixelButtonStyle(kind:compact:)` | `.primary` (one per screen), `.secondary`, `.ghost`, `.destructive` | Pressed: darker fill, label sinks 1 pt. Focused: 2-pt amber ring. Disabled: `textTertiary`, no fill. `compact` draws 36 pt but keeps a 44-pt hit area. |
 | `PixelIconButton(_:label:size:tint:isActive:action:)` / `PixelIconButtonStyle` | Icon-only button | ≥ 44 pt, label required, active = amber + `.isSelected`, pressed square, disabled tertiary. |
 | `PixelToggleStyle` (`.toggleStyle(.pixel)`), `PixelToggle(_:subtitle:isOn:)`, `PixelSwitch` | Switch row | Whole row toggles; `.isToggle` trait, value On/Off; amber track when on; Reduce Motion = no slide. |
-| `PixelSegmented(_:selection:options:identifier:title:)` | Segmented picker for any `Hashable` | Selected = amber label on `accentDim` + 2-pt base line, `.isSelected`; ≥ 44 pt; optional AX identifier per option. |
+| `PixelSegmented(_:selection:options:title:identifier:)` | Segmented picker for any `Hashable` | Selected = amber label on `accentDim` + 2-pt base line, `.isSelected`; ≥ 44 pt; optional AX identifier per option. |
 | `PixelSlider(_:value:in:step:valueText:onEditingChanged:)` | Stepped block track, square thumb | Snaps to `step` (block per step up to 24 steps); VoiceOver adjustable by one step; thumb turns amber while dragging. |
 | `PixelTextFieldStyle(isFocused:isInvalid:)`, `PixelTextField(_:text:prompt:isSecure:isInvalid:message:)` | Text / secure field | `borderStrong` boundary, amber when focused, red when invalid, helper/error line; ≥ 44 pt. |
 | `PixelSpinner(size:color:label:)` | 3 × 3 pixel loader | One "Loading" element, `.updatesFrequently`; Reduce Motion shows a static pattern. |
@@ -160,6 +161,9 @@ Font findings (checked with fontTools):
 | `PixelEmptyArt(_:pixelSize:)` with `PixelArtwork.library/.player/.subtitles` | Pixel illustration | Multi-ink grids (`+` frame, `#` detail, `o` highlight, `a` one amber element); decorative. |
 | `.pixelPanel(fill:border:)`, `.pixelBorder(_:lineWidth:step:)`, `.pixelFocusRing(_:)` | Modifiers | Crisp inside borders / focus ring. |
 | `AdaptiveText(_:font:arabicFont:)` | Text | Latin in the given font; Arabic in Plex Sans Arabic, RTL. |
+
+`DesignGallery()` (App/DesignSystem/DesignGallery.swift) shows every component and glyph on one
+screen — use its Xcode preview, or host it from a UI test to screenshot the system.
 
 ## App icon
 

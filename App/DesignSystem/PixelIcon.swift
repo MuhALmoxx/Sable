@@ -85,21 +85,22 @@ struct PixelBitmap: Equatable {
 
     /// Integer-snapped placement of the grid inside `size` points at `scale` device pixels per point.
     /// Every cell is a whole number of device pixels. The larger of two candidate cell sizes is used
-    /// when the ink still fits (the empty margin may then overhang the frame).
-    func layout(in size: CGSize, scale: CGFloat) -> (cell: CGFloat, origin: CGPoint) {
+    /// when the live area (the grid minus `margin` empty cells per side) still fits; the empty margin
+    /// may then overhang the frame. The choice depends only on grid size, margin, frame and scale —
+    /// never on a glyph's own ink — so every glyph gets the same cell size at a given point size.
+    func layout(in size: CGSize, scale: CGFloat, margin: Int = 1) -> (cell: CGFloat, origin: CGPoint) {
         let s = max(scale, 1)
         let deviceW = size.width * s, deviceH = size.height * s
         let n = CGFloat(max(width, height, 1))
+        let m = CGFloat(max(0, margin))
+        let live = max(1, n - 2 * m)
         var perCell = max(1, floor(min(deviceW, deviceH) / n))
-        if let ink = inkBounds {
-            let bigger = perCell + 1
-            let total = bigger * n
-            let ox = ((deviceW - total) / 2).rounded()
-            let oy = ((deviceH - total) / 2).rounded()
-            if ox + CGFloat(ink.minX) * bigger >= 0, ox + CGFloat(ink.maxX + 1) * bigger <= deviceW,
-               oy + CGFloat(ink.minY) * bigger >= 0, oy + CGFloat(ink.maxY + 1) * bigger <= deviceH {
-                perCell = bigger
-            }
+        let bigger = perCell + 1
+        let bx = ((deviceW - bigger * n) / 2).rounded()
+        let by = ((deviceH - bigger * n) / 2).rounded()
+        if bx + m * bigger >= 0, bx + (m + live) * bigger <= deviceW,
+           by + m * bigger >= 0, by + (m + live) * bigger <= deviceH {
+            perCell = bigger
         }
         let total = perCell * n
         let ox = ((deviceW - total) / 2).rounded()
