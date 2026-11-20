@@ -100,6 +100,10 @@ with the bundled sample clips and the offline mock translator). They are not fro
 |---|---|---|---|
 | <img src="docs/screenshots/05-translation-progress.png" width="200" alt="Whole-track translation in progress"> | <img src="docs/screenshots/07-timing.png" width="200" alt="Manual timing panel"> | <img src="docs/screenshots/08-sync-candidates.png" width="200" alt="Which line did the character say?"> | <img src="docs/screenshots/09-settings.png" width="200" alt="Settings"> |
 
+| External subtitles (switched during playback) | Sign in with ChatGPT |
+|---|---|
+| <img src="docs/screenshots/04b-external-srt.png" width="200" alt="External SRT selected while the video keeps playing"> | <img src="docs/screenshots/11-settings-chatgpt.png" width="200" alt="ChatGPT plan section in Settings"> |
+
 <img src="docs/screenshots/03-player-landscape.png" width="620" alt="Player, landscape">
 
 ## Format & codec support

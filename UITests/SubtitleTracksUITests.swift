@@ -36,13 +36,23 @@ final class SubtitleTracksUITests: SableUITestCase {
         closeSheetIfPresent(AX.Tracks.sheet)
 
         // English -> French while playing. The French track only has lines until 10.4 s, so rewind
-        // near 0 s first (before the list opens again) and switch right away.
-        restartPlaybackFromBeginning()
-        selectSubtitleTrack(id: Fixture.mkvFrenchSRT)
-        expectSubtitles(from: Fixture.mkvFrenchSRT, replacing: Fixture.mkvEnglishSRT, timeout: 12,
-                        description: "French dialogue replaces the English track",
-                        matching: { text in Fixture.frenchFragments.contains { text.localizedCaseInsensitiveContains($0) } },
-                        staleIf: { self.containsEnglishDialogue($0) })
+        // near 0 s first (before the list opens again) and switch right away. On a slow runner the
+        // sheet round trip alone can outlast those lines (seen on CI: the switch landed at 0:39);
+        // then the check would be meaningless, so go back to English and try again from the start.
+        // The switch itself is never surrounded by a pause or seek.
+        for attempt in 1...3 {
+            restartPlaybackFromBeginning()
+            selectSubtitleTrack(id: Fixture.mkvFrenchSRT)
+            if attempt < 3, let now = currentPlaybackTime(), now > 9.0 {
+                selectSubtitleTrack(id: Fixture.mkvEnglishSRT)
+                continue
+            }
+            expectSubtitles(from: Fixture.mkvFrenchSRT, replacing: Fixture.mkvEnglishSRT, timeout: 12,
+                            description: "French dialogue replaces the English track",
+                            matching: { text in Fixture.frenchFragments.contains { text.localizedCaseInsensitiveContains($0) } },
+                            staleIf: { self.containsEnglishDialogue($0) })
+            break
+        }
 
         // French -> Off.
         keepClipAhead(latest: 26)
