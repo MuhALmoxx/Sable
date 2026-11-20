@@ -220,8 +220,7 @@ struct TranslationSheet: View {
             SectionLabel("Reading subtitles")
             if case let .loading(progress?) = session.subtitleLoadState {
                 PixelProgressBar(value: progress)
-            } else {
-                PixelProgressBar(value: 0)
+                    .accessibilityLabel("Subtitle extraction progress")
             }
             Text("Reading the source track (embedded tracks are extracted once)…")
                 .font(Typo.reading).foregroundStyle(Palette.textSecondary)

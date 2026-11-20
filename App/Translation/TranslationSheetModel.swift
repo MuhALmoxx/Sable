@@ -58,13 +58,13 @@ final class TranslationSheetModel {
 
     // MARK: Tracks
 
-    static func isTranslation(_ track: SubtitleTrackDescriptor) -> Bool {
+    nonisolated static func isTranslation(_ track: SubtitleTrackDescriptor) -> Bool {
         if case .translated = track.origin { return true }
         return false
     }
 
     var sourceTracks: [SubtitleTrackDescriptor] { session.subtitleTracks.filter { !Self.isTranslation($0) } }
-    var translatedTracks: [SubtitleTrackDescriptor] { session.subtitleTracks.filter(Self.isTranslation) }
+    var translatedTracks: [SubtitleTrackDescriptor] { session.subtitleTracks.filter { Self.isTranslation($0) } }
     var selectedTrack: SubtitleTrackDescriptor? { selectedTrackID.flatMap { id in session.subtitleTracks.first { $0.id == id } } }
 
     func existingTranslation(for sourceID: String) -> SubtitleTrackDescriptor? {
@@ -77,9 +77,9 @@ final class TranslationSheetModel {
     }
 
     /// nil when translatable, otherwise the reason shown on the row.
-    static func unavailableReason(_ track: SubtitleTrackDescriptor) -> String? {
+    nonisolated static func unavailableReason(_ track: SubtitleTrackDescriptor) -> String? {
         if track.kind == .image { return "Image-based (PGS/VobSub) — needs OCR, not supported" }
-        if track.language?.primary == TranslationService.target.code.primary { return "Already Arabic" }
+        if track.language?.primary == TargetLanguages.arabic.code.primary { return "Already Arabic" }
         return nil
     }
 

@@ -153,6 +153,28 @@ final class ClaudeProviderTests: XCTestCase {
         await assertThrows(.invalidAPIKey) { try await ClaudeTranslationProvider.validate(apiKey: "sk-bad", httpClient: bad) }
     }
 
+    func testSystemPromptIsStableAcrossChunksForPromptCaching() throws {
+        let provider = ClaudeTranslationProvider(apiKey: "k", modelID: "claude-opus-5-5", httpClient: FakeHTTPClient())
+        var other = request()
+        other.units = [TranslationUnit(id: "77", text: "Something else entirely.")]
+        other.glossary = []
+        func system(_ r: TranslationChunkRequest) throws -> String {
+            let body = try jsonObject(provider.requestBody(for: r).data)
+            return try XCTUnwrap((body["system"] as? [[String: Any]])?.first?["text"] as? String)
+        }
+        XCTAssertEqual(try system(request()), try system(other))
+    }
+
+    func testJSONValueEscaping() throws {
+        let tricky = "Quote \" backslash \\ tab \t newline \n bell \u{07} sep \u{2028} عربي"
+        let encoded = JSONValue.object([("k", .string(tricky)), ("n", .int(3)), ("b", .bool(false)), ("z", .null)]).serialized()
+        XCTAssertEqual(encoded, #"{"k":"Quote \" backslash \\ tab \t newline \n bell \u0007 sep \u2028 عربي","n":3,"b":false,"z":null}"#)
+        let decoded = try jsonObject(Data(encoded.utf8))
+        XCTAssertEqual(decoded["k"] as? String, tricky)
+        XCTAssertEqual(decoded["n"] as? Int, 3)
+        XCTAssertEqual(decoded["b"] as? Bool, false)
+    }
+
     func testModelOptions() {
         XCTAssertEqual(ClaudeModels.defaultModelID, "claude-opus-5-5")
         XCTAssertEqual(ClaudeModels.options.map(\.id), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"])
