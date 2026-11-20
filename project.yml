@@ -13,6 +13,10 @@ settings:
     SWIFT_VERSION: "5.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
+    # Overridable from the xcodebuild command line by CI signing (tools/ci/signing.sh) without
+    # touching Swift package targets, which reject an explicit provisioning profile.
+    SABLE_BUNDLE_ID: com.murisixz.sable
+    SABLE_PROVISIONING_PROFILE: ""
 
 packages:
   SableKit:
@@ -103,7 +107,8 @@ targets:
             LSItemContentTypes: [com.murisixz.sable.subrip, com.murisixz.sable.webvtt, com.murisixz.sable.ass]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.murisixz.sable
+        PRODUCT_BUNDLE_IDENTIFIER: $(SABLE_BUNDLE_ID)
+        PROVISIONING_PROFILE_SPECIFIER: $(SABLE_PROVISIONING_PROFILE)
         PRODUCT_NAME: Sable
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"

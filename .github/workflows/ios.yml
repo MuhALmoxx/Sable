@@ -10,9 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       ui_tests:
-        description: "Run simulator UI tests and capture screenshots"
+        description: "Run simulator unit + UI tests and capture screenshots"
         type: boolean
         default: true
+      only_testing:
+        description: "Optional test subset, comma/space separated -only-testing identifiers (e.g. SableTests SableUITests/ParsingHelperUITests)"
+        type: string
+        default: ""
       runner:
         description: "macOS runner image"
         type: choice
@@ -20,7 +24,8 @@ on:
         options: [macos-latest, macos-26, macos-15]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A manual dispatch (e.g. simulator tests) must not cancel the push run of the same branch.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -36,34 +41,51 @@ jobs:
     timeout-minutes: 20
     container: swift:6.1.2-noble
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: swift test (SableKit)
+        timeout-minutes: 15
         run: swift test --package-path Packages/SableKit
 
   ios:
     name: iOS build, tests, IPA
     runs-on: ${{ inputs.runner || 'macos-latest' }}
-    timeout-minutes: 90
+    timeout-minutes: 100
+    env:
+      # Simulator tests run on main and on manual dispatch with ui_tests; every other branch
+      # still compiles the test targets (build-for-testing).
+      RUN_SIM_TESTS: ${{ github.ref == 'refs/heads/main' || inputs.ui_tests == true }}
+      # Optional signing: only when the repository defines the secrets (secrets cannot be used in
+      # step conditions directly).
+      HAS_SIGNING: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 != '' && secrets.IOS_PROVISIONING_PROFILE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Build metadata
+        run: |
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "Commit ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}; simulator tests: ${RUN_SIM_TESTS}; signing: ${HAS_SIGNING}"
 
       - name: Select newest Xcode
+        timeout-minutes: 5
         run: |
           XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE/Contents/Developer"; fi
           xcodebuild -version
           xcrun swift --version
+          echo "XCODE_VERSION=$(xcodebuild -version | head -1)" >> "$GITHUB_ENV"
 
       - name: Cache MobileVLCKit
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Vendor
           key: mobilevlckit-${{ env.VLCKIT_VERSION }}-v2
 
       - name: Fetch MobileVLCKit (pinned, checksum-verified)
+        timeout-minutes: 15
         run: ./scripts/fetch-vlckit.sh
 
       - name: Package tests (macOS)
+        timeout-minutes: 20
         run: |
           set -o pipefail
           mkdir -p build
@@ -71,11 +93,13 @@ jobs:
           ! grep -qE "(error:|with [1-9][0-9]* failures?)" build/package-tests-macos.log
 
       - name: Generate Xcode project
+        timeout-minutes: 10
         run: |
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           xcodegen generate
 
       - name: Build for iPhone (Release, unsigned)
+        timeout-minutes: 40
         run: |
           set -o pipefail
           xcodebuild -project Sable.xcodeproj -scheme Sable -configuration Release \
@@ -85,65 +109,160 @@ jobs:
           grep -q "BUILD SUCCEEDED" build/device-build.log
 
       - name: Package unsigned IPA
+        id: ipa
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           APP=build/DD/Build/Products/Release-iphoneos/Sable.app
           test -d "$APP"
-          test -d "$APP/Frameworks/MobileVLCKit.framework"
-          if find "$APP" -name "UITestFixtures" | grep -q .; then echo "UI-test fixtures leaked into Release" >&2; exit 1; fi
-          mkdir -p dist/Payload
+          IPA="Sable-${SHORT_SHA}-unsigned.ipa"
+          rm -rf dist && mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/
-          (cd dist && zip -qry Sable-unsigned.ipa Payload)
-          shasum -a 256 dist/Sable-unsigned.ipa | tee dist/Sable-unsigned.ipa.sha256
-          ls -lh dist/Sable-unsigned.ipa
+          (cd dist && zip -qry "$IPA" Payload && rm -rf Payload)
+          (cd dist && shasum -a 256 "$IPA" | tee "$IPA.sha256")
+          echo "UNSIGNED_IPA=dist/$IPA" >> "$GITHUB_ENV"
+          echo "name=$IPA" >> "$GITHUB_OUTPUT"
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
+      - name: Verify IPA is a real device build
+        timeout-minutes: 10
+        run: ./tools/ci/verify_ipa.sh "$UNSIGNED_IPA"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v6
         with:
-          name: Sable-unsigned-ipa
+          name: Sable-unsigned-ipa-${{ env.SHORT_SHA }}
           path: |
-            dist/Sable-unsigned.ipa
-            dist/Sable-unsigned.ipa.sha256
+            dist/Sable-${{ env.SHORT_SHA }}-unsigned.ipa
+            dist/Sable-${{ env.SHORT_SHA }}-unsigned.ipa.sha256
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Simulator tests (unit + UI)
-        if: ${{ github.ref == 'refs/heads/main' || inputs.ui_tests }}
+      - name: Pick iPhone simulator
+        id: sim
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          python3 tools/ci/pick_simulator.py --sdk-version "$SDK_VERSION" --min-version 18.0 \
+            --create-if-missing --github-output
+          echo "Simulator SDK $SDK_VERSION"
+
+      - name: Build for testing (simulator, Debug)
+        timeout-minutes: 40
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -o pipefail
-          UDID=$(xcrun simctl list devices available -j | python3 tools/ci/pick_simulator.py)
-          echo "Simulator: $UDID"
+          xcodebuild build-for-testing -project Sable.xcodeproj -scheme Sable -destination "id=$UDID" \
+            -derivedDataPath build/DDSim CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build/build-for-testing.log | grep -E "error:|TEST BUILD (SUCCEEDED|FAILED)|BUILD (SUCCEEDED|FAILED)" || true
+          grep -qE "(TEST BUILD|BUILD) SUCCEEDED" build/build-for-testing.log
+
+      - name: Boot simulator
+        if: ${{ env.RUN_SIM_TESTS == 'true' }}
+        timeout-minutes: 10
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b
+          # Clean, stable status bar for the exported screenshots.
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 \
+            --wifiBars 3 --cellularMode active --cellularBars 4 || true
+          echo "Booted ${{ steps.sim.outputs.name }} (${{ steps.sim.outputs.runtime }})"
+
+      - name: Simulator tests (unit + UI)
+        if: ${{ env.RUN_SIM_TESTS == 'true' }}
+        timeout-minutes: 50
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+          ONLY_TESTING: ${{ inputs.only_testing }}
+        run: |
+          set -o pipefail
+          ONLY=()
+          for identifier in $(echo "${ONLY_TESTING:-}" | tr ',' ' '); do ONLY+=("-only-testing:$identifier"); done
+          [ ${#ONLY[@]} -eq 0 ] || echo "Running subset: ${ONLY[*]}"
           set +e
-          xcodebuild test -project Sable.xcodeproj -scheme Sable -destination "id=$UDID" \
+          # Per-test time limits are the hang guard; the step timeout is the backstop.
+          xcodebuild test-without-building -project Sable.xcodeproj -scheme Sable -destination "id=$UDID" \
             -derivedDataPath build/DDSim -resultBundlePath build/Tests.xcresult \
-            CODE_SIGNING_ALLOWED=NO > build/tests.log 2>&1
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 420 -maximum-test-execution-time-allowance 900 \
+            ${ONLY[@]+"${ONLY[@]}"} > build/tests.log 2>&1
           STATUS=$?
           set -e
-          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ tests|TEST (SUCCEEDED|FAILED)|SABLE_METRIC" build/tests.log || true
+          grep -E "error:|Test Case .*(passed|failed|skipped)|Executed [0-9]+ tests|TEST (EXECUTE )?(SUCCEEDED|FAILED)|SABLE_METRIC" build/tests.log || true
           python3 tools/ci/summarize_tests.py build/tests.log >> "$GITHUB_STEP_SUMMARY" || true
           exit $STATUS
 
       - name: Export screenshots
-        if: ${{ always() && (github.ref == 'refs/heads/main' || inputs.ui_tests) }}
+        if: ${{ always() && env.RUN_SIM_TESTS == 'true' }}
+        timeout-minutes: 10
         run: python3 tools/ci/export_attachments.py build/Tests.xcresult build/screens || true
 
       - name: Upload screenshots and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: logs-and-screens
+          name: logs-and-screens-${{ env.SHORT_SHA }}
           path: |
             build/*.log
             build/screens
           if-no-files-found: ignore
           retention-days: 14
 
+      # ---- Optional signed IPA (only when signing secrets exist) ----
+      - name: Import signing certificate and profile
+        id: sign_import
+        if: ${{ !cancelled() && env.HAS_SIGNING == 'true' && steps.ipa.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD }}
+        run: ./tools/ci/signing.sh import
+
+      - name: Archive and export signed IPA
+        if: ${{ !cancelled() && steps.sign_import.outcome == 'success' }}
+        timeout-minutes: 40
+        run: |
+          ./tools/ci/signing.sh build
+          ./tools/ci/verify_ipa.sh "$SIGNED_IPA" --signed
+
+      - name: Upload signed IPA
+        if: ${{ !cancelled() && steps.sign_import.outcome == 'success' && env.SIGNED_IPA != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: Sable-signed-${{ env.SIGN_LABEL }}-ipa-${{ env.SHORT_SHA }}
+          path: |
+            ${{ env.SIGNED_IPA }}
+            ${{ env.SIGNED_IPA }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove signing material
+        if: ${{ always() && env.HAS_SIGNING == 'true' }}
+        run: ./tools/ci/signing.sh cleanup
+
+      - name: No signing secrets
+        if: ${{ env.HAS_SIGNING != 'true' }}
+        run: echo "Signing secrets are not configured; only the unsigned IPA was produced." >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- Rolling pre-release (main only; unsigned IPA only) ----
       - name: Publish rolling pre-release
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          cp "$UNSIGNED_IPA" dist/Sable-unsigned.ipa
+          (cd dist && shasum -a 256 Sable-unsigned.ipa > Sable-unsigned.ipa.sha256)
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest dist/Sable-unsigned.ipa dist/Sable-unsigned.ipa.sha256 \
-            --title "Sable (latest build ${GITHUB_SHA::7})" \
-            --notes "Unsigned IPA. It must be signed (e.g. with your Apple ID via AltStore/Sideloadly, or your own certificate) before it can be installed on an iPhone. Built from ${GITHUB_SHA} by run ${GITHUB_RUN_ID}." \
+            "$UNSIGNED_IPA" "$UNSIGNED_IPA.sha256" \
+            --title "Sable (latest build ${SHORT_SHA})" \
+            --notes "Unsigned IPA built from ${GITHUB_SHA} by run ${GITHUB_RUN_ID} (${XCODE_VERSION}). It must be signed before it can be installed on an iPhone (AltStore / SideStore / Sideloadly with your Apple ID, or codesign with your own certificate and provisioning profile). See the README for details. SHA-256: $(cut -d' ' -f1 dist/Sable-unsigned.ipa.sha256)" \
             --prerelease

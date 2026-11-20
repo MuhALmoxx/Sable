@@ -1,14 +1,9 @@
 import XCTest
 
-final class SmokeUITests: XCTestCase {
+final class SmokeUITests: SableUITestCase {
     func testLaunchShowsLibrary() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting"]
-        app.launch()
-        XCTAssertTrue(app.otherElements[AX.Library.screen].waitForExistence(timeout: 20) || app.staticTexts["Sable"].waitForExistence(timeout: 5))
-        let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "00-launch"
-        shot.lifetime = .keepAlways
-        add(shot)
+        launch(Launch.clean)
+        XCTAssertTrue(element(AX.Library.screen).exists)
+        attachScreenshot("00-launch")
     }
 }
