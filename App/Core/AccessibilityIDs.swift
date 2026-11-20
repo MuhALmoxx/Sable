@@ -35,6 +35,19 @@ enum AX {
         static let subtitleText = "player.subtitleText"
         static let errorMessage = "player.error"
         static let loading = "player.loading"
+        // Added by the playback agent.
+        static let title = "player.title"
+        static let lock = "player.lock"
+        static let unlock = "player.unlock"
+        static let rotate = "player.rotate"
+        static let retry = "player.retry"
+        static let tryVLC = "player.tryVLC"
+        static let subtitleStatus = "player.subtitleStatus"
+        static let notice = "player.notice"
+        static let seekBadge = "player.seekBadge"
+        static let engineTag = "player.engine"
+        static func speedOption(_ label: String) -> String { "player.speed.\(label)" }
+        static func aspectOption(_ rawValue: String) -> String { "player.aspect.\(rawValue)" }
     }
     enum Tracks {
         static let sheet = "tracks.sheet"
@@ -42,6 +55,14 @@ enum AX {
         static let subtitleOff = "tracks.subtitle.off"
         static func audio(_ id: String) -> String { "tracks.audio.\(id)" }
         static let importSubtitle = "tracks.importSubtitle"
+        // Added by the playback agent.
+        static let audioSheet = "tracks.audioSheet"
+        static let styleSmaller = "tracks.style.smaller"
+        static let styleLarger = "tracks.style.larger"
+        static func styleBackground(_ rawValue: String) -> String { "tracks.style.background.\(rawValue)" }
+        static func styleFont(_ rawValue: String) -> String { "tracks.style.font.\(rawValue)" }
+        static let showOriginal = "tracks.style.showOriginal"
+        static let styleDefault = "tracks.style.useDefault"
     }
     enum Translation {
         static let sheet = "translation.sheet"
